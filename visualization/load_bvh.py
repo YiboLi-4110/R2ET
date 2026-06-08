@@ -1,8 +1,8 @@
 import sys
 import os
 sys.path.append('./')
-sys.path.append("../utils")
-from utils import BVH
+sys.path.append("../outside-code")
+import BVH
 import numpy as np
 import bpy
 import mathutils

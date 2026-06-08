@@ -7,7 +7,7 @@ import argparse
 import os
 from scene import make_scene, add_material_for_character, add_rendering_parameters
 from options import Options
-from load_bvh import load_bvh
+# from load_bvh import load_bvh
 
 import pdb
 
@@ -91,7 +91,7 @@ def extract_weight(me):
     vgrps = me.vertex_groups
 
     weight = np.zeros((len(verts), len(vgrps)))
-    mask = np.zeros(weight.shape, dtype=np.int)
+    mask = np.zeros(weight.shape, dtype=int)
     vgrp_label = vgrps.keys()
 
     for i, vert in enumerate(verts):
@@ -242,8 +242,8 @@ def mesh_visualize(
     source_arm.hide_viewport = True
     bpy.ops.object.select_all(action='DESELECT')
 
-    os.system('rm %s' % bvh_file)  # remove temporary file
-
+    # os.system('rm %s' % bvh_file)  # remove temporary file
+    os.remove(bvh_file)
 
 def main():
     print(sys.argv)

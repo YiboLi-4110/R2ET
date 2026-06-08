@@ -1,1 +1,9 @@
-./.vscode
+.vscode
+save/
+visualization/bvh_files/
+visualization/skin/
+visualization/videos/
+visualization/visualize_self.sh
+outside-code/sdf/build
+outside-code/sdf/sdf_pytorch.egg-info
+**/__pycache__

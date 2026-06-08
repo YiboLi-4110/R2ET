@@ -64,9 +64,14 @@ def add_rendering_parameters(scene, args, camera):
         scene.render.engine = 'CYCLES'
         scene.cycles.device = 'GPU'
     elif args.render_engine == 'eevee':
-        scene.render.engine = 'BLENDER_EEVEE'
+        scene.render.engine = 'BLENDER_EEVEE_NEXT'
 
-    scene.render.image_settings.file_format = 'AVI_JPEG'
+    # scene.render.image_settings.file_format = 'AVI_JPEG'
+    # Blender 4.x：视频输出改用 FFMPEG
+    scene.render.image_settings.file_format = 'FFMPEG'
+    scene.render.ffmpeg.format = 'MPEG4'      # 输出 .mp4
+    scene.render.ffmpeg.codec = 'H264'
+    scene.render.ffmpeg.constant_rate_factor = 'HIGH'
     return scene
 
 
