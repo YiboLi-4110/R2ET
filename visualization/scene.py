@@ -39,16 +39,36 @@ def add_light(location):
 
 
 
-def make_scene(floor_size=1000, camera_position=(17.229, 0.5, 2.126), camera_rotation=(1.5359, 0, 1.57), light_position=(500, 0, 30)):    #  m37.54/7   -28.87/7   16.34/7
-    floor = add_floor(floor_size)
+def set_neutral_world_background(color=(0.08, 0.08, 0.08, 1.0)):
+    """Solid background when no floor plane is used."""
+    world = bpy.context.scene.world
+    if world is None:
+        world = bpy.data.worlds.new('World')
+        bpy.context.scene.world = world
+    world.use_nodes = True
+    bg = world.node_tree.nodes.get('Background')
+    if bg is not None:
+        bg.inputs[0].default_value = color
+
+
+def make_scene(
+    floor_size=1000,
+    camera_position=(17.229, 0.5, 2.126),
+    camera_rotation=(1.5359, 0, 1.57),
+    light_position=(500, 0, 30),
+    add_floor=True,
+):
+    floor = add_floor(floor_size) if add_floor else None
     camera = add_camera(camera_position, camera_rotation)
     light = add_light(light_position)
     bpy.ops.object.select_all(action='DESELECT')
-    floor.select_set(True)
-    camera.select_set(True)
-    light.select_set(True)
+    scene_objects = [obj for obj in (floor, camera, light) if obj is not None]
+    for obj in scene_objects:
+        obj.select_set(True)
     bpy.ops.object.move_to_collection(collection_index=0, is_new=True, new_collection_name="Scene")
     bpy.ops.object.select_all(action='DESELECT')
+    if not add_floor:
+        set_neutral_world_background()
     return [floor, camera, light]
 
 

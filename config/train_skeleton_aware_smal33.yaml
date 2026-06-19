@@ -1,0 +1,40 @@
+work_dir: ./work_dir/train_sklaware_smal33
+phase: train
+alpha: 100.0
+mu: 10.0
+nu: 100.0
+omega: 5.0
+kp: 0.8
+margin: 0.3
+lam: 2
+euler_ord: yzx
+max_length: 32
+num_joint: 33
+seed: 3047
+num_workers: 8
+
+train_feeder_args:
+  data_path: ./datasets/Planet_Zoo_FBX-smal2/train_q
+  stats_path: ./datasets/Planet_Zoo_FBX-smal2/stats
+  shape_path: ./datasets/Planet_Zoo_FBX-smal2/train_shape
+  max_length: 32
+  min_frames: 32
+  recompute_stats: false
+
+ret_model_args:
+  num_joint: 33
+  token_channels: 64
+  hidden_channels_p: 256
+  embed_channels_p: 128
+  kp: 0.8
+
+dis_model_args:
+  kp: 0.8
+
+epoch: 180
+device: [0]
+step: [20]
+base_lr: 0.001
+batch_size: 32
+weight_decay: 0.0
+model_save_name: r2et_skeleton_aware_smal33

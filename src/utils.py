@@ -103,11 +103,15 @@ def animation_plot(animations, savepath, parents, interval=33.33):
     ax.set_xlim3d(-scale * 30, scale * 30)
     ax.set_zlim3d(0, scale * 60)
     ax.set_ylim3d(-scale * 30, scale * 30)
-    ax.set_xticks([], [])
-    ax.set_yticks([], [])
-    ax.set_zticks([], [])
+    ax.set_xticks([])
+    ax.set_yticks([])
+    ax.set_zticks([])
     ax.view_init(0, 90)
-    ax.set_aspect("equal")
+    # ax.set_aspect("equal")
+    try:
+        ax.set_box_aspect((1, 1, 1))
+    except AttributeError:
+        pass
 
     plt.tight_layout()
 
@@ -138,22 +142,42 @@ def animation_plot(animations, savepath, parents, interval=33.33):
             offset = 200 * (ai - ((len(animations)) / 2))
             for j in range(len(parents)):
                 if parents[j] != -1:
-                    lines[ai][j].set_data(
+                    x = np.array(
                         [
                             animations[ai][i, j, 0] + offset,
                             animations[ai][i, parents[j], 0] + offset,
                         ],
-                        [-animations[ai][i, j, 2], -animations[ai][i, parents[j], 2]],
+                        dtype=np.float64,
                     )
-                    lines[ai][j].set_3d_properties(
-                        [animations[ai][i, j, 1], animations[ai][i, parents[j], 1]]
+                    y = np.array(
+                        [
+                            -animations[ai][i, j, 2],
+                            -animations[ai][i, parents[j], 2],
+                        ],
+                        dtype=np.float64,
                     )
-            changed += lines
-
+                    z = np.array(
+                        [
+                            animations[ai][i, j, 1],
+                            animations[ai][i, parents[j], 1],
+                        ],
+                        dtype=np.float64,
+                    )
+                    line = lines[ai][j]
+                    if hasattr(line, "set_data_3d"):
+                        line.set_data_3d(x, y, z)
+                    else:
+                        line.set_data(x, y)
+                        line.set_3d_properties(z)
+                    changed.append(line)
         return changed
 
     ani = animation.FuncAnimation(
-        fig, animate, np.arange(len(animations[0])), interval=interval
+        fig,
+        animate,
+        frames=np.arange(animations[0].shape[0]),
+        interval=interval,
+        blit=False,
     )
     ani.save(savepath, writer="ffmpeg", fps=30)
     plt.close()

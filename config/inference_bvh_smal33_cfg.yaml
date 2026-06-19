@@ -1,0 +1,19 @@
+phase: test
+num_joint: 33
+weights: ./work_dir/train_skeleton_aware_smal33/r2et_skeleton_aware_smal33_ret-180.pt
+device: 0
+save_path: ./save/inference_smal33
+make_video: true
+load_inp_data:
+  inp_shape_path: ./datasets/Planet_Zoo_FBX-smal2/train_shape/west_african_lion_female.npz
+  tgt_shape_path: ./datasets/Planet_Zoo_FBX-smal2/train_shape/sand_cat_male.npz
+  stats_path: ./datasets/Planet_Zoo_FBX-smal2/stats
+  inp_bvh_path: ./datasets/Planet_Zoo_FBX-smal2/train_char/west_african_lion_female/west_african_lion_female@runtowalkturnl.bvh
+  tgt_bvh_path: ./datasets/Planet_Zoo_FBX-smal2/train_char/sand_cat_male/sand_cat_male@climbbeam.bvh
+
+ret_model_args:
+  num_joint: 33
+  token_channels: 64
+  hidden_channels_p: 256
+  embed_channels_p: 128
+  kp: 0.8

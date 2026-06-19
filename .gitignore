@@ -7,3 +7,13 @@ visualization/visualize_self.sh
 outside-code/sdf/build
 outside-code/sdf/sdf_pytorch.egg-info
 **/__pycache__
+datasets/Planet_Zoo_FBX-smal2
+datasets/mixamo/train_q
+work_dir/
+datasets/*.sh
+.cursorignore
+*.log
+*.bvh
+*.npz
+*.npy
+*.sh
