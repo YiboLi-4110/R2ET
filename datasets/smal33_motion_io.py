@@ -261,6 +261,20 @@ def load_retnet(weights_path, ret_model_args, device):
     return model
 
 
+def load_shape_retnet(weights_path, ret_model_args, device):
+    """Load shape-aware RetNet (stage-2); strict=False for shared stage-1 keys."""
+    from src.model_shape_aware_smal33 import RetNet
+
+    model = RetNet(**ret_model_args).to(device)
+    weights = torch.load(str(weights_path), map_location=device)
+    cleaned = OrderedDict()
+    for key, val in weights.items():
+        cleaned[key.split("module.")[-1]] = val
+    model.load_state_dict(cleaned, strict=False)
+    model.eval()
+    return model
+
+
 def setup_cuda_device(device_id):
     import os
 

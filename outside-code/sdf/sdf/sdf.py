@@ -15,7 +15,7 @@ class SDFFunction(Function):
         return _C.sdf(phi, faces, vertices)
 
     @staticmethod
-    def backward(ctx):
+    def backward(ctx, grad_output):
         return None, None, None
 
 class SDF(nn.Module):
@@ -36,7 +36,7 @@ class SDFFunction2(Function):
         return _C.sdf2(phi, faces, vertices)
 
     @staticmethod
-    def backward(ctx):
+    def backward(ctx, grad_output):
         return None, None, None
 
 class SDF2(nn.Module):

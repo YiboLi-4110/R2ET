@@ -92,7 +92,12 @@ class Feeder(Dataset):
         self.right_front_leg_lst = np.array([11, 12, 13, 14])
         self.left_hind_leg_lst = np.array([18, 19, 20, 21])
         self.right_hind_leg_lst = np.array([22, 23, 24, 25])
+        self.tail_bone_lst = np.array([26, 27, 28, 29, 30, 31, 32])
         self.body_bone_lst = np.array([0, 1, 2, 3, 4, 5, 6, 15, 16, 17])
+        # Torso vs head split for RDF convex-hull construction in shape-aware training.
+        self.torso_bone_lst = np.array([0, 1, 2, 3, 4, 5, 6])
+        self.head_bone_lst = np.array([15, 16, 17])
+        self.paw_bone_lst = np.array([10, 14, 21, 25])
 
         self.shape_dic = {}
         shape_lst = []
