@@ -1,0 +1,73 @@
+# Stage-2 shape-aware training on smal@shepherd motion with batch2_dogs targets.
+#
+# Mixed training semantics (per batch sample):
+#   - Source motion (A): always shepherd train_q (~110 clips)
+#   - 50% self-recon (aeReg=1): shepherd -> same shepherd shape/skeleton
+#   - 50% cross (aeReg=0): shepherd motion -> target B sampled by cross_external_target_prob
+#       * cross_external_target_prob: fraction of cross samples using batch2_dogs
+#       * 1 - cross_external_target_prob: fraction using another shepherd character
+# batch2_dogs has only 2-frame rest BVHs, so it cannot be used as motion source.
+work_dir: ./work_dir/train_shepherd_shapeaware_smal33_3
+mesh_path: ./datasets/shepherd/smal@shepherd/train_shape/
+# Geometry loss (RDF/ATT) needs meshes for BOTH target types when cross_external_target_prob > 0.
+mesh_paths:
+  - ./datasets/shepherd/smal@shepherd/train_shape/
+  - ./datasets/shepherd/batch2_dogs/batch2_dogs_shape/
+phase: train
+alpha: 100.0
+mu: 10.0
+omega_smooth: 0.0
+kappa: 0.5
+tao: 0.005
+w_front: 1.5
+w_hind: 3.0
+# w_tail_hind: 3.5
+w_tail_hind: 10.0
+w_att: 1.0
+enable_front_rdf: false
+sdf_grid_size: 32
+geo_frame_stride: 2
+enable_att_loss: false
+kp: 0.8
+margin: 0.3
+lam: 2.0
+euler_ord: yzx
+max_length: 32
+num_joint: 33
+seed: 3047
+num_workers: 8
+
+train_feeder_args:
+  data_path: ./datasets/shepherd/smal@shepherd/train_q
+  stats_path: ./datasets/shepherd/stats
+  shape_path: ./datasets/shepherd/smal@shepherd/train_shape
+  max_length: 32
+  min_frames: 16
+  recompute_stats: false
+  target_data_path: ./datasets/shepherd/batch2_dogs/batch2_dogs_q
+  target_shape_path: ./datasets/shepherd/batch2_dogs/batch2_dogs_shape
+  target_min_frames: 2
+  cross_external_target_prob: 0.75
+
+ret_model_args:
+  num_joint: 33
+  token_channels: 64
+  hidden_channels_p: 256
+  embed_channels_p: 128
+  kp: 0.8
+
+dis_model_args:
+  kp: 0.8
+
+epoch: 240
+device: [0]
+step: [180]
+base_lr: 0.01
+batch_size: 16
+weight_decay: 0.0
+model_save_name: r2et_shepherd_shape_aware_smal33
+# Point to shepherd stage-1 checkpoints after skeleton training finishes.
+ret_weights: ./work_dir/train_shepherd_skeleton_aware_smal33/r2et_shepherd_skeleton_aware_smal33_ret-176.pt
+dis_weights: ./work_dir/train_shepherd_skeleton_aware_smal33/r2et_shepherd_skeleton_aware_smal33_dis-176.pt
+ignore_weights: []
+master_port: 29507

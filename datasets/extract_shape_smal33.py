@@ -27,6 +27,44 @@ def get_width(vertices):
     return width
 
 
+AXIS_TRANSFORMS = {
+    "none": np.eye(3, dtype=np.float64),
+    # Shepherd bind-pose diagnostic result:
+    #   new_x = old_y, new_y = -old_z, new_z = old_x
+    "shepherd_y_negz_x": np.array(
+        [
+            [0.0, 1.0, 0.0],
+            [0.0, 0.0, -1.0],
+            [1.0, 0.0, 0.0],
+        ],
+        dtype=np.float64,
+    ),
+    # A/B candidate when shepherd_y_negz_x appears vertically flipped:
+    #   new_x = old_y, new_y = old_z, new_z = old_x
+    "shepherd_y_z_x": np.array(
+        [
+            [0.0, 1.0, 0.0],
+            [0.0, 0.0, 1.0],
+            [1.0, 0.0, 0.0],
+        ],
+        dtype=np.float64,
+    ),
+}
+
+
+def axis_transform_matrix(name):
+    key = "none" if name in (None, "", "none") else str(name)
+    if key not in AXIS_TRANSFORMS:
+        known = ", ".join(sorted(AXIS_TRANSFORMS))
+        raise ValueError(f"Unknown axis transform '{name}'. Known: {known}")
+    return AXIS_TRANSFORMS[key]
+
+
+def apply_axis_transform_points(points, axis_transform="none"):
+    matrix = axis_transform_matrix(axis_transform)
+    return np.einsum("ij,...j->...i", matrix, points)
+
+
 '''33 joints SMAL quadruped'''
 JOINT_NAME_SMAL_33 = [
     "Root",
@@ -74,7 +112,75 @@ def parse_args():
         action="store_true",
         help="If set, recompute .npz files even when they already exist.",
     )
+    parser.add_argument(
+        "--one_npz_per_subdirectory",
+        action="store_true",
+        help=(
+            "Treat each immediate subdirectory of --fbx_root as one character. "
+            "Pick one .fbx inside (see --recursive_fbx_search) and write "
+            "<subdir_name>.npz to --save_path. Useful when motion FBX files "
+            "for the same character live under per-pet folders."
+        ),
+    )
+    parser.add_argument(
+        "--all_fbx_per_subdirectory",
+        action="store_true",
+        help=(
+            "Treat each immediate subdirectory of --fbx_root as a group and "
+            "export every .fbx inside to --save_path/<fbx_stem>.npz. "
+            "Useful for batch2_dogs where each subject has its own FBX."
+        ),
+    )
+    parser.add_argument(
+        "--recursive_fbx_search",
+        action="store_true",
+        default=True,
+        help=(
+            "With --one_npz_per_subdirectory or --all_fbx_per_subdirectory, "
+            "also search nested folders under each character subdirectory "
+            "(default: true)."
+        ),
+    )
+    parser.add_argument(
+        "--no_recursive_fbx_search",
+        action="store_false",
+        dest="recursive_fbx_search",
+        help="Only look for .fbx files directly under each character subdirectory.",
+    )
+    parser.add_argument(
+        "--mocap_y_up",
+        action="store_true",
+        help=(
+            "Import FBX with mocap-style axes (-Z forward, Y up). "
+            "Use the same setting as fbx2bvh_smal33.py for external assets."
+        ),
+    )
+    parser.add_argument(
+        "--fbx_axis_forward",
+        type=str,
+        default="",
+        help="Optional FBX import axis_forward override (e.g. -Z).",
+    )
+    parser.add_argument(
+        "--fbx_axis_up",
+        type=str,
+        default="",
+        help="Optional FBX import axis_up override (e.g. Y).",
+    )
+    parser.add_argument(
+        "--axis_transform",
+        default="none",
+        help="Optional post-import coordinate transform. Use shepherd_y_negz_x for smal@shepherd.",
+    )
     return parser.parse_args(argv)
+
+
+def resolve_fbx_import_axes(args):
+    if args.fbx_axis_forward or args.fbx_axis_up:
+        return args.fbx_axis_forward or "-Z", args.fbx_axis_up or "Y"
+    if args.mocap_y_up:
+        return "-Z", "Y"
+    return None, None
 
 
 def rm_prefix_name(name):
@@ -141,9 +247,15 @@ def build_simplified_joint_offsets(source_arm, rest_origin):
     return simplified_joint_offsets
 
 
-def extract_data(fbx_path, subject_name, save_path):
+def extract_data(fbx_path, subject_name, save_path, fbx_axes=None, axis_transform="none"):
     clear_scene()
-    bpy.ops.import_scene.fbx(filepath=str(fbx_path), use_anim=True)
+    kwargs = {"filepath": str(fbx_path), "use_anim": True}
+    if fbx_axes is not None:
+        axis_forward, axis_up = fbx_axes
+        if axis_forward and axis_up:
+            kwargs["axis_forward"] = axis_forward
+            kwargs["axis_up"] = axis_up
+    bpy.ops.import_scene.fbx(**kwargs)
     context = bpy.context
     scene = context.scene
 
@@ -183,10 +295,15 @@ def extract_data(fbx_path, subject_name, save_path):
                 )
 
             np_rest_verts = np.array(rest_verts_lst)
+            np_rest_verts = apply_axis_transform_points(np_rest_verts, axis_transform)
             np_rest_faces = np.array(rest_faces_lst)
 
     simplified_joint_names = list(JOINT_NAME_SMAL_33)
     simplified_joint_offsets = build_simplified_joint_offsets(source_arm, rest_origin)
+    simplified_joint_offsets = apply_axis_transform_points(
+        simplified_joint_offsets,
+        axis_transform,
+    )
     root_orient_data = np.zeros((1, 3), dtype=np.single)
 
     # ====== extract data block ======
@@ -293,21 +410,130 @@ def extract_data(fbx_path, subject_name, save_path):
     clear_scene()
 
 
+def list_fbx_files(directory: Path) -> list[Path]:
+    return sorted(
+        path
+        for path in directory.iterdir()
+        if path.is_file() and path.suffix.lower() == ".fbx" and not path.name.startswith(".")
+    )
+
+
+def find_fbx_for_character(directory: Path, recursive: bool) -> Path | None:
+    direct = list_fbx_files(directory)
+    if direct:
+        return direct[0]
+    if not recursive:
+        return None
+    for subdir in sorted(
+        path for path in directory.iterdir() if path.is_dir() and not path.name.startswith(".")
+    ):
+        found = find_fbx_for_character(subdir, recursive=True)
+        if found is not None:
+            return found
+    return None
+
+
+def collect_all_fbx_under(directory: Path, recursive: bool) -> list[Path]:
+    if recursive:
+        return sorted(
+            path
+            for path in directory.rglob("*.fbx")
+            if path.is_file() and not path.name.startswith(".")
+        )
+    return list_fbx_files(directory)
+
+
+def collect_extraction_jobs(
+    fbx_root: Path,
+    one_npz_per_subdirectory: bool,
+    all_fbx_per_subdirectory: bool,
+    recursive_fbx_search: bool,
+):
+    if one_npz_per_subdirectory and all_fbx_per_subdirectory:
+        raise ValueError(
+            "Cannot use --one_npz_per_subdirectory together with --all_fbx_per_subdirectory."
+        )
+
+    jobs = []
+    if one_npz_per_subdirectory or all_fbx_per_subdirectory:
+        character_dirs = sorted(
+            path
+            for path in fbx_root.iterdir()
+            if path.is_dir() and not path.name.startswith(".")
+        )
+        for character_dir in character_dirs:
+            if all_fbx_per_subdirectory:
+                fbx_paths = collect_all_fbx_under(character_dir, recursive_fbx_search)
+                if not fbx_paths:
+                    print(f"WARN: no .fbx found under {character_dir}, skipping")
+                    continue
+                for fbx_path in fbx_paths:
+                    jobs.append(
+                        {
+                            "fbx_path": fbx_path,
+                            "subject_name": fbx_path.stem,
+                            "character_dir": character_dir,
+                        }
+                    )
+            else:
+                fbx_path = find_fbx_for_character(character_dir, recursive_fbx_search)
+                if fbx_path is None:
+                    print(f"WARN: no .fbx found under {character_dir}, skipping")
+                    continue
+                jobs.append(
+                    {
+                        "fbx_path": fbx_path,
+                        "subject_name": character_dir.name,
+                        "character_dir": character_dir,
+                    }
+                )
+    else:
+        for fbx_path in list_fbx_files(fbx_root):
+            jobs.append(
+                {
+                    "fbx_path": fbx_path,
+                    "subject_name": fbx_path.stem,
+                    "character_dir": fbx_root,
+                }
+            )
+    return jobs
+
+
 if __name__ == '__main__':
     args = parse_args()
     fbx_root = args.fbx_root.resolve()
     save_path = args.save_path.resolve()
 
-    fbx_name_lst = sorted(
-        [path.name for path in fbx_root.iterdir() if path.is_file() and path.suffix.lower() == ".fbx"]
-    )
+    if not fbx_root.exists():
+        raise SystemExit(f"fbx_root does not exist: {fbx_root}")
 
-    for fbx_name in fbx_name_lst:
-        subject_name = fbx_name.split(".")[0]
+    jobs = collect_extraction_jobs(
+        fbx_root,
+        args.one_npz_per_subdirectory,
+        args.all_fbx_per_subdirectory,
+        args.recursive_fbx_search,
+    )
+    if not jobs:
+        raise SystemExit(f"No .fbx extraction jobs found under {fbx_root}")
+
+    print(f"Found {len(jobs)} shape job(s)")
+    fbx_axes = resolve_fbx_import_axes(args)
+    if fbx_axes is not None:
+        print(f"FBX import axes: forward={fbx_axes[0]!r}, up={fbx_axes[1]!r}")
+    print(f"axis_transform={args.axis_transform}")
+    for job in jobs:
+        subject_name = job["subject_name"]
+        fbx_path = job["fbx_path"]
         output_file = os.path.join(save_path, '%s.npz' % subject_name)
         if os.path.exists(output_file) and not args.overwrite_existing:
-            print("SKIP:", subject_name)
+            print(f"SKIP: {subject_name} (exists)")
             continue
-        fbx_path = fbx_root / fbx_name
-        extract_data(fbx_path, subject_name, save_path)
-        print("DONE:", subject_name)
+        print(f"EXTRACT: {subject_name} <= {fbx_path}")
+        extract_data(
+            fbx_path,
+            subject_name,
+            save_path,
+            fbx_axes=fbx_axes,
+            axis_transform=args.axis_transform,
+        )
+        print(f"DONE: {subject_name}")

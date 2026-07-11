@@ -31,12 +31,14 @@ from datasets.smal33_motion_io import (
     SMAL33_PARENTS,
     dump_json,
     list_sequences,
+    load_mesh_npz_dict,
     load_retnet,
+    load_shape_for_character,
     load_shape_retnet,
-    load_shape_vector,
     load_stats,
     load_window_from_sample,
     setup_cuda_device,
+    shape_roots_from_args,
     split_characters,
 )
 from src.mesh_geometry_cache import build_mesh_geometry_cache
@@ -70,6 +72,19 @@ def parse_args():
         "--shape_path",
         type=Path,
         default=REPO_ROOT / "datasets/Planet_Zoo_FBX-smal2/train_shape",
+        help="Default shape directory when inp/tgt shape paths are not set.",
+    )
+    parser.add_argument(
+        "--inp_shape_path",
+        type=Path,
+        default=None,
+        help="Optional source-character shape .npz directory for cross eval.",
+    )
+    parser.add_argument(
+        "--tgt_shape_path",
+        type=Path,
+        default=None,
+        help="Optional target-character shape .npz directory for cross eval.",
     )
     parser.add_argument(
         "--mesh_path",
@@ -177,14 +192,8 @@ def build_mesh_vertex_groups(mesh_file_dic):
     return groups
 
 
-def load_mesh_assets(mesh_path):
-    mesh_file_dic = {}
-    for npz_path in sorted(mesh_path.glob("*.npz")):
-        if npz_path.name.startswith("."):
-            continue
-        mesh_file_dic[npz_path.stem] = np.load(npz_path)
-    if not mesh_file_dic:
-        raise FileNotFoundError(f"No mesh npz under {mesh_path}")
+def load_mesh_assets(*mesh_paths):
+    mesh_file_dic = load_mesh_npz_dict(*mesh_paths)
     mesh_groups = build_mesh_vertex_groups(mesh_file_dic)
     mesh_geom_cache = build_mesh_geometry_cache(mesh_file_dic, mesh_groups)
     return mesh_groups, mesh_geom_cache
@@ -197,16 +206,6 @@ def resolve_mesh_name(character, mesh_geom_cache):
         if character in name or name in character:
             return name
     raise KeyError(f"No mesh for character '{character}' in cache keys")
-
-
-def load_shape_for_character(shape_path, character):
-    npz = Path(shape_path) / f"{character}.npz"
-    if not npz.exists():
-        candidates = list(Path(shape_path).glob(f"*{character}*.npz"))
-        if not candidates:
-            raise FileNotFoundError(f"No shape npz for character {character}")
-        npz = candidates[0]
-    return load_shape_vector(npz).astype(np.float32)
 
 
 def to_batch(sample_a, sample_b, shape_a, shape_b, device):
@@ -395,7 +394,8 @@ def evaluate_checkpoint(
     stats,
     parents,
     val_samples,
-    shape_path,
+    inp_shape_root,
+    tgt_shape_root,
     mesh_groups,
     mesh_geom_cache,
     args,
@@ -413,7 +413,7 @@ def evaluate_checkpoint(
     self_metrics = []
     for sample in tqdm(self_pool, desc="self-recon", leave=False):
         win = load_window_from_sample(sample, stats, args.max_length, rng=rng)
-        shape = load_shape_for_character(shape_path, sample["character"])
+        shape = load_shape_for_character(inp_shape_root, sample["character"]).astype(np.float32)
         batch = to_batch(win, win, shape, shape, device)
         local_b, global_b, quat_b = forward_fn(
             model, batch, stats, parents, device
@@ -469,8 +469,8 @@ def evaluate_checkpoint(
         sample_b = pair["sample_b"]
         win_a = load_window_from_sample(sample_a, stats, args.max_length, rng=rng)
         win_b = load_window_from_sample(sample_b, stats, args.max_length, rng=rng)
-        shape_a = load_shape_for_character(shape_path, char_a)
-        shape_b = load_shape_for_character(shape_path, char_b)
+        shape_a = load_shape_for_character(inp_shape_root, char_a).astype(np.float32)
+        shape_b = load_shape_for_character(tgt_shape_root, char_b).astype(np.float32)
         batch = to_batch(win_a, win_b, shape_a, shape_b, device)
         local_b, global_b, quat_b = forward_fn(
             model, batch, stats, parents, device
@@ -610,7 +610,15 @@ def main():
         parser.set_defaults(**cfg)
         p = parser.parse_args()
 
+    inp_shape_root, tgt_shape_root = shape_roots_from_args(
+        p.shape_path, p.inp_shape_path, p.tgt_shape_path
+    )
     mesh_path = p.mesh_path or p.shape_path
+    mesh_roots = list(
+        dict.fromkeys(
+            path for path in [mesh_path, inp_shape_root, tgt_shape_root] if path is not None
+        )
+    )
     device = setup_cuda_device(p.device)
     stats = load_stats(p.stats_path)
     parents = SMAL33_PARENTS
@@ -625,7 +633,7 @@ def main():
     if not ckpts:
         raise SystemExit("No checkpoints found.")
 
-    mesh_groups, mesh_geom_cache = load_mesh_assets(Path(mesh_path))
+    mesh_groups, mesh_geom_cache = load_mesh_assets(*mesh_roots)
     cross_pairs = build_cross_pairs(val_samples, p.num_cross_pairs, p.seed)
 
     p.output_dir.mkdir(parents=True, exist_ok=True)
@@ -633,7 +641,10 @@ def main():
         "settings": {
             "data_path": str(p.data_path),
             "shape_path": str(p.shape_path),
+            "inp_shape_path": str(inp_shape_root),
+            "tgt_shape_path": str(tgt_shape_root),
             "mesh_path": str(mesh_path),
+            "mesh_roots": [str(path) for path in mesh_roots],
             "val_ratio": p.val_ratio,
             "val_characters": sorted(val_chars),
             "train_characters_count": len(train_chars),
@@ -666,7 +677,8 @@ def main():
             stats,
             parents,
             val_samples,
-            p.shape_path,
+            inp_shape_root,
+            tgt_shape_root,
             mesh_groups,
             mesh_geom_cache,
             p,
@@ -691,7 +703,8 @@ def main():
             stats,
             parents,
             val_samples,
-            p.shape_path,
+            inp_shape_root,
+            tgt_shape_root,
             mesh_groups,
             mesh_geom_cache,
             p,

@@ -5,6 +5,7 @@ sys.path.append('./')
 import numpy as np
 import argparse
 import os
+import math
 from scene import make_scene, add_material_for_character, add_rendering_parameters
 from options import Options
 # from load_bvh import load_bvh
@@ -186,27 +187,49 @@ def check_repeat_name(name, exist_lst, current_lst):
             return obj.name
 
 
+def _root_objects(objects):
+    object_names = {obj.name for obj in objects}
+    return [
+        obj
+        for obj in objects
+        if obj.parent is None or obj.parent.name not in object_names
+    ]
+
+
+def _apply_transform_to_roots(objects, x_bias, y_bias, z_bias, rot_z_rad):
+    # Only transform root objects. Transforming both parents and children causes
+    # double rotations/translations in imported FBX hierarchies.
+    for obj in _root_objects(objects):
+        obj.rotation_euler[2] = rot_z_rad
+        obj.location[0] = x_bias
+        obj.location[1] = y_bias
+        obj.location[2] = z_bias
+
+
 def mesh_visualize(
     input_fbx,
     input_bvh,
     x_bias=0,
     y_bias=0,
     z_bias=0,
+    rot_z_deg=90.0,
     collection_name='Character Mesh',
     source_format=None,
 ):
     exist_obj_names = in_other_colls()
+    rot_z_rad = math.radians(float(rot_z_deg))
 
     load_fbx(input_fbx)
-    bpy.context.object.rotation_euler[2] = 1.5708
-    bpy.context.object.location[0] = x_bias
-    bpy.context.object.location[1] = y_bias
-    bpy.context.object.location[2] = z_bias
+    imported_fbx_objects = [
+        obj for obj in bpy.data.objects if obj.name not in exist_obj_names
+    ]
+    if not imported_fbx_objects:
+        raise RuntimeError(f"No FBX objects imported from {input_fbx}")
+    _apply_transform_to_roots(imported_fbx_objects, x_bias, y_bias, z_bias, rot_z_rad)
 
-    for obj in bpy.data.objects:
-        if ('Armature' in obj.name) and (not obj.name in exist_obj_names):
-            armature_name = obj.name
-    source_arm = bpy.data.objects[armature_name]
+    source_arm = next((obj for obj in imported_fbx_objects if obj.type == 'ARMATURE'), None)
+    if source_arm is None:
+        raise RuntimeError(f"No armature found in imported FBX: {input_fbx}")
 
     meshes = []
     current_obj_names = []
@@ -218,12 +241,20 @@ def mesh_visualize(
 
     bvh_file = set_rest_pose_bvh(input_bvh, source_arm, source_format)
     bvh_name = load_armature(bvh_file, source_format)
-    bpy.context.object.rotation_euler[2] = 1.5708
-    bpy.context.object.location[0] = x_bias
-    bpy.context.object.location[1] = y_bias
-    bpy.context.object.location[2] = z_bias
+    imported_bvh_objects = [
+        obj
+        for obj in bpy.data.objects
+        if obj.name not in exist_obj_names and obj.name not in current_obj_names
+    ]
+    if imported_bvh_objects:
+        _apply_transform_to_roots(imported_bvh_objects, x_bias, y_bias, z_bias, rot_z_rad)
 
     bvh_name = check_repeat_name(bvh_name, exist_obj_names, current_obj_names)
+    if bvh_name is None:
+        bvh_armatures = [obj for obj in imported_bvh_objects if obj.type == 'ARMATURE']
+        if not bvh_armatures:
+            raise RuntimeError(f"No armature found in imported BVH: {input_bvh}")
+        bvh_name = bvh_armatures[0].name
     dest_arm = bpy.data.objects[bvh_name]
     dest_arm.scale = source_arm.scale  # scale the bvh to match the fbx
 

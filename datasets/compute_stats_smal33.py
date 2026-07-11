@@ -49,7 +49,17 @@ def parse_args():
         "--shape_path",
         type=Path,
         default=DEFAULT_DATA_ROOT / "train_shape",
-        help="Directory with per-character *.npz shape files.",
+        help="Primary directory with *.npz shape files (e.g. smal@shepherd/train_shape).",
+    )
+    parser.add_argument(
+        "--extra_shape_paths",
+        type=Path,
+        nargs="*",
+        default=(),
+        help=(
+            "Additional shape directories merged into shape stats "
+            "(e.g. batch2_dogs/batch2_dogs_shape for target skeletons)."
+        ),
     )
     parser.add_argument(
         "--stats_path",
@@ -150,12 +160,28 @@ def load_motion_samples(data_path: Path, min_frames: int):
     }
 
 
-def load_shape_stats(shape_path: Path):
-    shape_files = sorted(
-        p for p in shape_path.glob("*.npz") if not p.name.startswith(".")
-    )
+def iter_shape_files(shape_paths):
+    seen = set()
+    for shape_path in shape_paths:
+        shape_path = Path(shape_path)
+        if not shape_path.exists():
+            raise FileNotFoundError(f"shape path does not exist: {shape_path}")
+        for shape_file in sorted(shape_path.glob("*.npz")):
+            if shape_file.name.startswith("."):
+                continue
+            key = shape_file.stem
+            if key in seen:
+                continue
+            seen.add(key)
+            yield shape_file
+
+
+def load_shape_stats(shape_paths):
+    shape_paths = [Path(p) for p in shape_paths]
+    shape_files = list(iter_shape_files(shape_paths))
     if not shape_files:
-        raise FileNotFoundError(f"No .npz shape files found under {shape_path}")
+        roots = ", ".join(str(p) for p in shape_paths)
+        raise FileNotFoundError(f"No .npz shape files found under: {roots}")
 
     shape_vectors = []
     characters = []
@@ -176,6 +202,7 @@ def load_shape_stats(shape_path: Path):
         "characters": characters,
         "shape_mean": shape_array.mean(axis=0),
         "shape_std": shape_array.std(axis=0),
+        "shape_sources": [str(p.parent) for p in shape_files],
     }
 
 
@@ -263,6 +290,7 @@ def build_summary(args, load_info, motion_stats, shape_stats, saved_paths):
     return {
         "data_path": str(args.data_path.resolve()),
         "shape_path": str(args.shape_path.resolve()),
+        "extra_shape_paths": [str(p.resolve()) for p in args.extra_shape_paths],
         "stats_path": str(args.stats_path.resolve()),
         "min_frames": args.min_frames,
         "num_joints": NUM_JOINTS,
@@ -289,6 +317,7 @@ def build_summary(args, load_info, motion_stats, shape_stats, saved_paths):
         "shape": {
             "num_characters": len(shape_stats["characters"]),
             "characters": shape_stats["characters"],
+            "shape_sources": shape_stats.get("shape_sources", []),
             "shape_mean_shape": list(shape_stats["shape_mean"].shape),
             "shape_std_shape": list(shape_stats["shape_std"].shape),
             "zero_std_count": zero_shape_std,
@@ -320,7 +349,8 @@ def main():
         )
 
     motion_stats = compute_motion_stats(samples)
-    shape_stats = load_shape_stats(args.shape_path)
+    shape_roots = [args.shape_path, *args.extra_shape_paths]
+    shape_stats = load_shape_stats(shape_roots)
     saved_paths = save_stats(
         args.stats_path, motion_stats, shape_stats, args.use_legacy_names
     )

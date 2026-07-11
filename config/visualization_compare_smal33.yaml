@@ -1,0 +1,140 @@
+output_root: ./visualization/videos/compare
+device: 0
+strict_texture_assets: true
+skip_arp_if_missing: false
+
+# Camera knobs aligned with inspect configs.
+camera:
+  camera_zoom: 10.0
+  view_elev: 18.0
+  view_azim: -60.0
+
+render:
+  render_engine: eevee # eevee | cycles
+  resolution_x: 1920
+  resolution_y: 1080
+  fps: 24
+  frame_step: 1
+  lane_spacing: 1.3
+  include_copyquat: true
+  lane_label_size: 0.35
+  camera_distance_scale: 1.5
+  camera_lens_mm: 70.0
+  # Optional absolute camera control (set to [x, y, z]); null uses auto camera.
+  camera_position_xyz: [12.0, 0.5, 4.2]
+  camera_target_xyz: [0.0, 0.0, 0.0]
+  # LBS renderer uses this as the row center; null falls back to camera_target_xyz.
+  layout_center_xyz: null
+  lane_label_z_offset: 0.25
+  lane_label_color: [1.0, 0.0, 0.0, 1.0]
+  sun_light_position_xyz: [20.0, 20.0, 60.0]
+  sun_light_rotation_deg: [55.0, -20.0, 40.0]
+  sun_light_energy: 6.5
+  fill_light_position_xyz: [0.0, 0.0, 18.0]
+  fill_light_energy: 600.0
+  fill_light_size: 20.0
+  lbs_use_fbx_materials: true
+  # LBS vertices are Y-up; convert them onto Blender's Z-up floor.
+  lbs_axis_transform: y_up_to_z_up
+  # Positive values rotate counter-clockwise around Blender Z; use -30 for clockwise.
+  # lbs_global_yaw_deg: -45.0
+  lbs_global_yaw_deg: 70.0
+  lbs_lane_yaw_deg_default: 0.0
+  lbs_lane_yaw_deg:
+    source: 0.0
+    copyquat: 0.0
+    arp: 0.0
+    ours: 0.0
+  add_floor: true
+  auto_align_floor: true
+  floor_z: 0.0
+  floor_size: 40.0
+  floor_checker_scale: 24.0
+  floor_rotation_deg: 30.0
+  lane_rot_z_deg_default: 90.0
+  lane_rot_z_deg:
+    source: 0.0
+    copyquat: 90.0
+    arp: 90.0
+    ours: 90.0
+
+motion:
+  inp_axis_transform: shepherd_y_z_x
+  inp_forward_mode: body
+  tgt_axis_transform: shepherd_y_z_x
+  tgt_forward_mode: body
+  # ARP output is usually in Blender-native coordinates; set as needed.
+  arp_axis_transform: none
+  arp_forward_mode: body
+
+ret_model_args:
+  num_joint: 33
+  token_channels: 64
+  hidden_channels_p: 256
+  embed_channels_p: 128
+  kp: 0.8
+
+model:
+  stage2_weights: ./work_dir/train_shepherd_shapeaware_smal33/r2et_shepherd_shape_aware_smal33_ret-180.pt
+  stats_path: ./datasets/shepherd/stats
+
+# ARP IO conventions for batch mode.
+arp:
+  output_dir: ./visualization/videos/compare/arp_outputs
+  output_suffix: _arp_retarget.bvh
+  # Primary ARP render path: cache Blender-evaluated mesh vertices after ARP retarget.
+  mesh_output_dir: ./visualization/videos/compare/arp_mesh_outputs
+  # Export space for ARP mesh cache.
+  #   world_root_h_locked_zup: cancel ONLY root horizontal translation; keep the
+  #     root's rotation + vertical translation, so the jump arc and torso pitch
+  #     survive while the animal stays in place. (recommended)
+  #   root_bone_local_zup: also removes root rotation + vertical -> flattens the
+  #     jump; kept for reference only.
+  # choices: blender_world_z_up | mesh_local_zup | armature_local_zup |
+  #          root_bone_local_zup | world_root_h_locked_zup
+  mesh_export_space: world_root_h_locked_zup
+  # Correct ARP facing direction before lane rendering. Handedness is fixed via a
+  # proper rotation in export, so auto only picks among rotations (identity/yaw_180).
+  # choices: auto | identity | yaw_180 | mirror_x | mirror_z
+  mesh_orientation_correction: auto
+  # world_root_h_locked_zup already cancels horizontal drift at the source, so the
+  # bbox-center lock must stay OFF (it would reintroduce limb-driven wobble).
+  mesh_lock_horizontal_translation: false
+  # anchor choices: first | median
+  mesh_lock_reference: first
+  # Import the SOURCE animation from FBX (not BVH) so its bone frames match the
+  # FBX target. A BVH source uses Blender's BVH axis convention / recomputed bone
+  # rolls, which makes ARP's ABSOLUTE remap map vertical (jump) motion onto the
+  # target's horizontal axis. Set false only to fall back to the old BVH source.
+  use_source_fbx: true
+  # Legacy BVH helper option; batch demo rendering now uses target FBX mesh export.
+  use_target_bvh: true
+  source_armature_hint: null
+  target_armature_hint: null
+  # SMAL33 remap preset: bones use smal: prefix on source/target skeletons.
+  # Script copies visualization/arp_presets/smal33_to_smal33.bmap into ARP remap_presets/.
+  # remap_preset_name: smal33_to_smal33
+  remap_preset_name: smal33_remap_preset
+  operator_sequence:
+    - auto_scale
+    - build_bones_list
+    - import_config_preset
+    - retarget
+
+# Textured FBX assets live next to BVH under train_char / batch2_dogs_char.
+# By default inp_fbx_path / tgt_fbx_path are auto-resolved from BVH paths
+# (same directory, same stem: foo.bvh -> foo.fbx). Override per case if needed.
+assets:
+  source_char_root: ./datasets/shepherd/smal@shepherd/train_char
+  target_char_root: ./datasets/shepherd/batch2_dogs/batch2_dogs_char
+  recursive_fbx_search: false
+
+# Batch case list: source action from shepherd, target rig from batch2_dogs.
+cases:
+  - case_id: attack_to_bomei3
+    inp_bvh_path: ./datasets/shepherd/smal@shepherd/train_char/shepherd@Attack/shepherd@Attack_J_smal_dog-foot_on_ground.bvh
+    tgt_bvh_path: ./datasets/shepherd/batch2_dogs/batch2_dogs_char/博美/博美_3-0.bvh
+    inp_shape_path: ./datasets/shepherd/smal@shepherd/train_shape/shepherd@Attack.npz
+    tgt_shape_path: ./datasets/shepherd/batch2_dogs/batch2_dogs_shape/博美_3-0.npz
+    # Optional explicit ARP output path; if omitted, use arp.output_dir/case_id+suffix.
+    arp_bvh_path: null

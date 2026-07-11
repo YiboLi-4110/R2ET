@@ -221,6 +221,8 @@ def train(
         shapeA,
         shapeB,
         quatA_cp,
+        _shape_keyA,
+        _shape_keyB,
     ) in enumerate(data_loader):
         seqA = seqA.float().to(device)
         skelA = skelA.float().to(device)

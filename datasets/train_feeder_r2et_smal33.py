@@ -8,6 +8,10 @@ Changes vs datasets/train_feeder_r2et.py:
   - quadruped height proxy
   - fixed global-motion padding shape (T, 4)
   - random crop only when sequence length > max_length
+  - optional target_data_path / target_shape_path for static target skeletons
+    (e.g. batch2_dogs rest poses) while motion stays on data_path (smal@shepherd)
+  - cross_external_target_prob: in cross-retarget mode, probability of sampling
+    target skel/shape from the external pool vs from data_path (shepherd) characters
 """
 
 import torch
@@ -80,12 +84,24 @@ class Feeder(Dataset):
         max_length,
         min_frames=32,
         recompute_stats=False,
+        target_data_path=None,
+        target_shape_path=None,
+        target_min_frames=2,
+        cross_external_target_prob=0.5,
     ):
         self.data_path = data_path
         self.stats_path = stats_path
         self.max_length = max_length
         self.min_frames = min_frames
         self.recompute_stats = recompute_stats
+        self.target_data_path = target_data_path
+        self.target_shape_path = target_shape_path
+        self.target_min_frames = target_min_frames
+        if not 0.0 <= cross_external_target_prob <= 1.0:
+            raise ValueError(
+                f"cross_external_target_prob must be in [0, 1], got {cross_external_target_prob}"
+            )
+        self.cross_external_target_prob = float(cross_external_target_prob)
         self.parents = SMAL33_PARENTS.copy()
 
         self.left_front_leg_lst = np.array([7, 8, 9, 10])
@@ -101,6 +117,34 @@ class Feeder(Dataset):
 
         self.shape_dic = {}
         shape_lst = []
+        self._load_shape_directory(shape_path)
+        if target_shape_path is not None:
+            self._load_shape_directory(target_shape_path)
+        if not self.shape_dic:
+            raise FileNotFoundError("No .npz shape files loaded.")
+
+        for _, shape_vec in sorted(self.shape_dic.items()):
+            shape_lst.append(shape_vec[:, :])
+
+        shape_array = np.concatenate(shape_lst, axis=0)
+        self.shape_mean = shape_array.mean(axis=0)
+        self.shape_std = shape_array.std(axis=0)
+
+        self.load_data()
+        self.target_pool = self._load_target_skeleton_pool()
+        if self.target_pool:
+            print(
+                "Cross-retarget target mix: "
+                f"external(batch2_dogs)={self.cross_external_target_prob:.2f}, "
+                f"shepherd={1.0 - self.cross_external_target_prob:.2f}"
+            )
+
+    def _load_shape_directory(self, shape_path):
+        if shape_path is None:
+            return
+        if not exists(shape_path):
+            raise FileNotFoundError(f"shape_path does not exist: {shape_path}")
+
         file_names = sorted(
             f for f in listdir(shape_path) if not f.startswith(".") and f.endswith(".npz")
         )
@@ -108,23 +152,19 @@ class Feeder(Dataset):
             raise FileNotFoundError(f"No .npz shape files found under {shape_path}")
 
         for shape_name in file_names:
+            shape_key = shape_name.split(".")[0]
+            if shape_key in self.shape_dic:
+                continue
             fbx_file = np.load(join(shape_path, shape_name))
             full_width = fbx_file["full_width"].astype(np.single)
             joint_shape = fbx_file["joint_shape"].astype(np.single)
             if joint_shape.shape[0] != NUM_JOINTS:
                 raise ValueError(
-                    f"Expected {NUM_JOINTS} joints in {shape_name}, got {joint_shape.shape[0]}"
+                    f"Expected {NUM_JOINTS} joints in {shape_name}, got {joint_shape.shape[0]}."
                 )
 
             shape_vecotr = np.divide(joint_shape, full_width[None, :])
-            self.shape_dic[shape_name.split(".")[0]] = shape_vecotr
-            shape_lst.append(shape_vecotr[:, :])
-
-        shape_array = np.concatenate(shape_lst, axis=0)
-        self.shape_mean = shape_array.mean(axis=0)
-        self.shape_std = shape_array.std(axis=0)
-
-        self.load_data()
+            self.shape_dic[shape_key] = shape_vecotr
 
     def _stats_available(self):
         return all(
@@ -299,6 +339,112 @@ class Feeder(Dataset):
         self.seq_names = seq_names
         self.all_quats = all_quats
 
+    def _resolve_shape_key(self, folder_name, seq_name):
+        if seq_name in self.shape_dic:
+            return seq_name
+        if folder_name in self.shape_dic:
+            return folder_name
+        raise KeyError(
+            f"No shape .npz found for sequence '{seq_name}' or folder '{folder_name}'. "
+            "Expected <seq_name>.npz or <folder_name>.npz in shape_path / target_shape_path."
+        )
+
+    def _load_target_skeleton_pool(self):
+        if self.target_data_path is None:
+            return []
+
+        if not exists(self.target_data_path):
+            raise FileNotFoundError(
+                f"target_data_path does not exist: {self.target_data_path}"
+            )
+
+        target_pool = []
+        skipped_short = 0
+        skipped_missing = 0
+        folders = sorted(
+            f
+            for f in listdir(self.target_data_path)
+            if not f.startswith(".") and not f.endswith("py") and not f.endswith(".npz")
+        )
+        for folder_name in folders:
+            files = sorted(
+                f
+                for f in listdir(join(self.target_data_path, folder_name))
+                if not f.startswith(".") and f.endswith("_seq.npy")
+            )
+            for cfile in files:
+                file_name = cfile[: -len("_seq.npy")]
+                skel_path = join(
+                    self.target_data_path, folder_name, file_name + "_skel.npy"
+                )
+                if not exists(skel_path):
+                    skipped_missing += 1
+                    continue
+
+                sequence = np.load(join(self.target_data_path, folder_name, cfile))
+                if sequence.shape[0] < self.target_min_frames:
+                    skipped_short += 1
+                    continue
+
+                positions = np.load(skel_path)
+                local = np.reshape(
+                    sequence[:, :-SEQ_TAIL_DIM], (sequence.shape[0], -1, 3)
+                )
+                if local.shape[1] != NUM_JOINTS:
+                    raise ValueError(
+                        f"Expected {NUM_JOINTS} joints in {cfile}, got {local.shape[1]}"
+                    )
+
+                positions = positions.copy()
+                positions[:, 0, :] = local[:, 0, :]
+                positions = (positions - self.local_mean) / self.local_std
+                shape_key = self._resolve_shape_key(folder_name, file_name)
+                target_pool.append(
+                    {
+                        "folder": folder_name,
+                        "sequence": file_name,
+                        "shape_key": shape_key,
+                        "skel": positions,
+                    }
+                )
+
+        print(f"Target skeleton pool: {len(target_pool)} entries")
+        print(f"Target skipped short (<{self.target_min_frames}): {skipped_short}")
+        print(f"Target skipped missing sidecars: {skipped_missing}")
+        if self.target_data_path and not target_pool:
+            raise RuntimeError(
+                f"No target skeletons loaded from {self.target_data_path} "
+                f"with target_min_frames={self.target_min_frames}."
+            )
+        return target_pool
+
+    def _sample_shepherd_target(self, max_len, n_joints):
+        indexB = np.random.randint(len(self.train_skel))
+        shape_keyB = self._resolve_shape_key(
+            self.all_names[indexB], self.seq_names[indexB]
+        )
+        cskelB = self.train_skel[indexB][0:max_len]
+        cskelB = self._pad_time(cskelB, max_len, (n_joints, 3))
+        return indexB, shape_keyB, cskelB
+
+    def _sample_external_target(self, max_len, n_joints):
+        target_idx = np.random.randint(len(self.target_pool))
+        target_entry = self.target_pool[target_idx]
+        cskelB = target_entry["skel"][0:max_len]
+        cskelB = self._pad_time(cskelB, max_len, (n_joints, 3))
+        return target_idx, target_entry["shape_key"], cskelB
+
+    def _sample_cross_target(self, max_len, n_joints):
+        use_external = (
+            self.target_pool
+            and np.random.rand() < self.cross_external_target_prob
+        )
+        if use_external:
+            indexB, shape_keyB, cskelB = self._sample_external_target(max_len, n_joints)
+        else:
+            indexB, shape_keyB, cskelB = self._sample_shepherd_target(max_len, n_joints)
+        return indexB, shape_keyB, cskelB
+
     @staticmethod
     def _crop_start(seq_len, max_len):
         if seq_len <= max_len:
@@ -353,15 +499,12 @@ class Feeder(Dataset):
         cquatA = quat_i[stidx : stidx + max_len]
         cquatA = self._pad_time(cquatA, max_len, (n_joints, 4), identity_quat=True)
 
-        indexB = np.random.randint(len(self.train_skel))
-        cskelB = self.train_skel[indexB][0:max_len]
-        cskelB = self._pad_time(cskelB, max_len, (n_joints, 3))
-
         joints_a = (cskelA[0][None] * self.local_std) + self.local_mean
         height_a = self.get_height_from_skel(joints_a[0]) / 100.0
 
-        joints_b = (cskelB[0][None] * self.local_std) + self.local_mean
-        height_b = self.get_height_from_skel(joints_b[0]) / 100.0
+        shape_keyA = self._resolve_shape_key(
+            self.all_names[indexA], self.seq_names[indexA]
+        )
 
         aeReg_on = np.random.binomial(1, p=0.5)
         if aeReg_on:
@@ -370,9 +513,13 @@ class Feeder(Dataset):
             heightA[0] = height_a
             heightB[0] = height_a
             indexB = indexA
+            shape_keyB = shape_keyA
         else:
             aeReg[0] = 0
             heightA[0] = height_a
+            indexB, shape_keyB, cskelB = self._sample_cross_target(max_len, n_joints)
+            joints_b = (cskelB[0][None] * self.local_std) + self.local_mean
+            height_b = self.get_height_from_skel(joints_b[0]) / 100.0
             heightB[0] = height_b
 
         localA = clocalA.reshape((max_len, -1))
@@ -386,8 +533,8 @@ class Feeder(Dataset):
         seqB = np.concatenate((localB, globalB), axis=-1).astype(np.float32)
         skelB = cskelB.reshape((max_len, -1)).astype(np.float32)
 
-        shapeA = self.shape_dic[self.all_names[indexA]].reshape(-1)
-        shapeB = self.shape_dic[self.all_names[indexB]].reshape(-1)
+        shapeA = self.shape_dic[shape_keyA].reshape(-1)
+        shapeB = self.shape_dic[shape_keyB].reshape(-1)
 
         return (
             indexA,
@@ -403,6 +550,8 @@ class Feeder(Dataset):
             shapeA,
             shapeB,
             quatA,
+            shape_keyA,
+            shape_keyB,
         )
 
     @staticmethod

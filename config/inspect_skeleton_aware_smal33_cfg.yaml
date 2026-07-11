@@ -1,0 +1,21 @@
+phase: test
+num_joint: 33
+weights: ./work_dir/train_skeleton_aware_smal33/r2et_skeleton_aware_smal33_ret-96.pt
+device: 0
+save_path: ./work_dir/train_skeleton_aware_smal33/inspect
+make_video: true
+load_inp_data:
+  inp_shape_path: ./datasets/shepherd/smal@shepherd/train_shape/shepherd@Attack.npz
+  # inp_shape_path: ./datasets/Planet_Zoo_FBX-smal2/train_shape/arctic_wolf_male.npz
+  tgt_shape_path: ./datasets/shepherd/smal@shepherd/train_shape/shepherd@Crouch.npz
+  stats_path: ./datasets/Planet_Zoo_FBX-smal2/stats
+  inp_bvh_path: ./datasets/shepherd/smal@shepherd/train_char/shepherd@Attack/shepherd@Attack_Bite_RM_smal_dog-foot_on_ground.bvh
+  # inp_bvh_path: ./datasets/Planet_Zoo_FBX-smal2/train_char/arctic_wolf_male/arctic_wolf_male@fighttaunt.bvh
+  tgt_bvh_path: ./datasets/shepherd/smal@shepherd/train_char/shepherd@Crouch/shepherd@Crouch_B_RM_smal_dog-foot_on_ground.bvh
+
+ret_model_args:
+  num_joint: 33
+  token_channels: 64
+  hidden_channels_p: 256
+  embed_channels_p: 128
+  kp: 0.8

@@ -621,6 +621,31 @@ class RetNet(nn.Module):
         return regular_weights_loss
 
     @staticmethod
+    def get_smooth_loss(localB_rt_denorm, mask):
+        """
+        Temporal smoothness penalty on denormalized local joint trajectories.
+
+        This mirrors the skeleton-aware stage and uses second-order finite
+        differences, so it damps frame-wise jitter without penalizing constant
+        velocity motion. Only valid, unpadded frame triplets contribute.
+        """
+        if localB_rt_denorm.shape[1] < 3:
+            return torch.tensor(0.0, device=localB_rt_denorm.device)
+        accel = (
+            localB_rt_denorm[:, 2:]
+            - 2 * localB_rt_denorm[:, 1:-1]
+            + localB_rt_denorm[:, :-2]
+        )
+        valid = mask[:, 2:] * mask[:, 1:-1] * mask[:, :-2]
+        accel_sq = torch.mean(torch.square(accel), dim=[2, 3])
+        smooth_loss = torch.sum(accel_sq * valid)
+        denom = torch.maximum(
+            torch.sum(valid),
+            torch.tensor(1.0, device=valid.device),
+        )
+        return torch.divide(smooth_loss, denom)
+
+    @staticmethod
     def _build_sdf_from_hull(
         vertices_centered_scaled,
         hull_spec,

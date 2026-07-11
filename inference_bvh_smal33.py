@@ -22,7 +22,6 @@ from datasets.smal33_motion_io import (
     SMAL33_PARENTS,
     build_model_inputs,
     get_inp_from_bvh,
-    get_orient_start_smal33,
     load_retnet,
     load_shape_vector,
     load_stats,
@@ -111,6 +110,19 @@ def Animation_positions_global(anim):
     return Animation.positions_global(anim)
 
 
+def motion_parse_options(load_data, prefix):
+    return {
+        "axis_transform": load_data.get(
+            f"{prefix}_axis_transform",
+            load_data.get("axis_transform", "none"),
+        ),
+        "forward_mode": load_data.get(
+            f"{prefix}_forward_mode",
+            load_data.get("forward_mode", "across"),
+        ),
+    }
+
+
 def main():
     parser = parse_args()
     p = parser.parse_args()
@@ -132,8 +144,14 @@ def main():
     stats = load_stats(load_data["stats_path"])
     model = load_retnet(p.weights, p.ret_model_args, device)
 
-    inp_motion = get_inp_from_bvh(load_data["inp_bvh_path"])
-    tgt_motion = get_inp_from_bvh(load_data["tgt_bvh_path"])
+    inp_motion = get_inp_from_bvh(
+        load_data["inp_bvh_path"],
+        **motion_parse_options(load_data, "inp"),
+    )
+    tgt_motion = get_inp_from_bvh(
+        load_data["tgt_bvh_path"],
+        **motion_parse_options(load_data, "tgt"),
+    )
     if inp_motion is None or tgt_motion is None:
         raise SystemExit("Failed to parse input/target BVH.")
 

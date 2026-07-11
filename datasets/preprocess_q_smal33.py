@@ -1,203 +1,101 @@
-import os
-import shutil
-import sys
+#!/usr/bin/env python3
+"""
+Generate SMAL33 local/global motion data from BVH files.
 
-sys.path.append("../outside-code")
-sys.path.append("./")
-os.chdir(sys.path[0])
-import BVH as BVH
+Defaults preserve the original Planet Zoo behavior. For shepherd data, use:
+  --axis_transform shepherd_y_negz_x --forward_mode body
+"""
+
+from __future__ import annotations
+
+import argparse
+from pathlib import Path
+
 import numpy as np
-import scipy.ndimage.filters as filters
-import Animation
-from Quaternions import Quaternions
-from Pivots import Pivots
-from os import listdir, makedirs, system
-from os.path import exists
+
+from smal33_motion_io import get_inp_from_bvh
 
 
-def get_skel(joints, parents):
-    c_offsets = []
-    for j in range(parents.shape[0]):
-        if parents[j] != -1:
-            c_offsets.append(joints[j, :] - joints[parents[j], :])
-        else:
-            c_offsets.append(joints[j, :])
-    return np.stack(c_offsets, axis=0)
-
-
-def softmax(x, **kw):
-    softness = kw.pop("softness", 1.0)
-    maxi, mini = np.max(x, **kw), np.min(x, **kw)
-    return maxi + np.log(softness + np.exp(mini - maxi))
-
-
-def softmin(x, **kw):
-    return -softmax(-x, **kw)
-
-
-def process(positions):
-    # F J 3
-    """Put on Floor"""
-    # SMAL quadruped: 4 feet (front paws + hind paws)
-    # LeftFrontPaw=10, RightFrontPaw=14, LeftHindPaw=21, RightHindPaw=25
-    fid_l, fid_r = np.array([10, 21]), np.array([14, 25])
-    foot_heights = np.minimum(positions[:, fid_l, 1], positions[:, fid_r, 1]).min(
-        axis=1
+def parse_args():
+    parser = argparse.ArgumentParser(description="Preprocess SMAL33 BVH files into train_q arrays.")
+    parser.add_argument(
+        "--data_path",
+        type=Path,
+        default=Path("./datasets/Planet_Zoo_FBX-smal2/train_char"),
+        help="Root directory containing per-character BVH subdirectories.",
     )
-    floor_height = softmin(foot_heights, softness=0.5, axis=0)
-
-    positions[:, :, 1] -= floor_height
-
-    """ Add Reference Joint """
-    trajectory_filterwidth = 3
-    reference = positions[:, 0]
-    positions = np.concatenate([reference[:, np.newaxis], positions], axis=1)
-
-    """ Get Foot Contacts """
-    velfactor, heightfactor = np.array([0.15, 0.15]), np.array([9.0, 6.0])
-
-    feet_l_x = (positions[1:, fid_l, 0] - positions[:-1, fid_l, 0]) ** 2
-    feet_l_y = (positions[1:, fid_l, 1] - positions[:-1, fid_l, 1]) ** 2
-    feet_l_z = (positions[1:, fid_l, 2] - positions[:-1, fid_l, 2]) ** 2
-    feet_l_h = positions[:-1, fid_l, 1]
-    feet_l = (
-        ((feet_l_x + feet_l_y + feet_l_z) < velfactor) & (feet_l_h < heightfactor)
-    ).astype(np.float32)
-
-    feet_r_x = (positions[1:, fid_r, 0] - positions[:-1, fid_r, 0]) ** 2
-    feet_r_y = (positions[1:, fid_r, 1] - positions[:-1, fid_r, 1]) ** 2
-    feet_r_z = (positions[1:, fid_r, 2] - positions[:-1, fid_r, 2]) ** 2
-    feet_r_h = positions[:-1, fid_r, 1]
-    feet_r = (
-        ((feet_r_x + feet_r_y + feet_r_z) < velfactor) & (feet_r_h < heightfactor)
-    ).astype(np.float32)
-
-    """ Get Root Velocity """
-    velocity = (positions[1:, 0:1] - positions[:-1, 0:1]).copy()
-
-    """ Remove Translation """
-    positions[:, :, 0] = positions[:, :, 0] - positions[:, :1, 0]
-    positions[1:, 1:, 1] = positions[1:, 1:, 1] - (
-        positions[1:, :1, 1] - positions[:1, :1, 1]
+    parser.add_argument(
+        "--save_path",
+        type=Path,
+        default=Path("./datasets/Planet_Zoo_FBX-smal2/train_q"),
+        help="Output root for *_seq.npy, *_quat.npy, *_skel.npy.",
     )
-    positions[:, :, 2] = positions[:, :, 2] - positions[:, :1, 2]
-
-    """ Get Forward Direction """
-    # SMAL quadruped: LeftUpperArm=8, RightUpperArm=12, LeftThigh=18, RightThigh=22
-    # +1 for added reference joint
-    sdr_l, sdr_r, hip_l, hip_r = 8 + 1, 12 + 1, 18 + 1, 22 + 1
-    across1 = positions[:, hip_l] - positions[:, hip_r]
-    across0 = positions[:, sdr_l] - positions[:, sdr_r]
-    across = across0 + across1
-    across = across / np.sqrt((across**2).sum(axis=-1))[..., np.newaxis]
-
-    direction_filterwidth = 20
-    forward = np.cross(across, np.array([[0, 1, 0]]))
-    forward = filters.gaussian_filter1d(
-        forward, direction_filterwidth, axis=0, mode="nearest"
+    parser.add_argument(
+        "--axis_transform",
+        default="none",
+        help="Optional coordinate transform. Use shepherd_y_negz_x for smal@shepherd.",
     )
-    forward = forward / np.sqrt((forward**2).sum(axis=-1))[..., np.newaxis]
-
-    """ Remove Y Rotation """
-    target = np.array([[0, 0, 1]]).repeat(len(forward), axis=0)
-    rotation = Quaternions.between(forward, target)[:, np.newaxis]
-    positions = rotation * positions
-
-    """ Get Root Rotation """
-    velocity = rotation[1:] * velocity
-    rvelocity = Pivots.from_quaternions(rotation[1:] * -rotation[:-1]).ps
-
-    """ Add Velocity, RVelocity, Foot Contacts to vector """
-    positions = positions[:-1]
-    positions = positions.reshape(len(positions), -1)
-    positions = np.concatenate([positions, velocity[:, :, 0]], axis=-1)
-    positions = np.concatenate([positions, velocity[:, :, 1]], axis=-1)
-    positions = np.concatenate([positions, velocity[:, :, 2]], axis=-1)
-    positions = np.concatenate([positions, rvelocity], axis=-1)
-    positions = np.concatenate([positions, feet_l, feet_r], axis=-1)
-
-    return positions, rotation
-
-
-""" This script generated the local/global motion decoupled data and
-    stores it for later training """
-
-data_paths = ["./Planet_Zoo_FBX-smal2/train_char/"]
-save_path = "./Planet_Zoo_FBX-smal2/train_q/"
-# SMAL 33-joint skeleton (32 JOINTs + 1 ROOT)
-joints_list = [
-    "Spine1", "Spine2", "Spine3", "Spine4", "Spine5", "Spine6",
-    "LeftScapula", "LeftUpperArm", "LeftForeLeg", "LeftFrontPaw",
-    "RightScapula", "RightUpperArm", "RightForeLeg", "RightFrontPaw",
-    "Neck", "Head", "Jaw",
-    "LeftThigh", "LeftShin", "LeftHock", "LeftHindPaw",
-    "RightThigh", "RightShin", "RightHock", "RightHindPaw",
-    "Tail1", "Tail2", "Tail3", "Tail4", "Tail5", "Tail6", "Tail7",
-]
-
-for data_path in data_paths:
-    print("Processing " + data_path)
-    folders = sorted(
-        [
-            f
-            for f in listdir(data_path)
-            if not f.startswith(".") and not f.endswith("py") and not f.endswith("npz")
-        ]
+    parser.add_argument(
+        "--forward_mode",
+        choices=["across", "body"],
+        default="across",
+        help="Canonical forward estimator. Planet Zoo default is across; shepherd should use body.",
     )
-    # folders = ['']  # for one folder
-    for folder in folders:
-        # os.mkdir(save_path+folder)
-        files = sorted([f for f in listdir(data_path + folder) if f.endswith(".bvh")])
-        for cfile in files:
-            print(data_path + folder + "/" + cfile)
-            # shutil.copy(data_path+folder+"/"+cfile,save_path+folder+"/"+cfile)
-            anim, _, _ = BVH.load(data_path + folder + "/" + cfile)
+    parser.add_argument("--overwrite_existing", action="store_true")
+    return parser.parse_args()
 
-            bvh_file = open(data_path + folder + "/" + cfile).read().split("JOINT")
-            bvh_joints = [f.split("\n")[0] for f in bvh_file[1:]]
-            to_keep = [0]
-            for jname in joints_list:
-                for k in range(len(bvh_joints)):
-                    if jname == bvh_joints[k][-len(jname) :]:
-                        to_keep.append(k + 1)
-                        break
 
-            anim.parents = anim.parents[to_keep]
-            for i in range(1, len(anim.parents)):
-                """If joint not needed, connect to the previous joint"""
-                if anim.parents[i] not in to_keep:
-                    anim.parents[i] = anim.parents[i] - 1
-                anim.parents[i] = to_keep.index(anim.parents[i])
+def iter_bvh_files(data_path):
+    for folder in sorted(p for p in data_path.iterdir() if p.is_dir() and not p.name.startswith(".")):
+        for bvh_path in sorted(folder.glob("*.bvh")):
+            yield folder.name, bvh_path
 
-            anim.positions = anim.positions[:, to_keep, :]
-            anim.rotations.qs = anim.rotations.qs[:, to_keep, :]
-            anim.orients.qs = anim.orients.qs[to_keep, :]
-            if anim.positions.shape[0] > 1:
-                joints = Animation.positions_global(anim)
-                joints = np.concatenate([joints, joints[-1:]], axis=0)
-                new_joints, rotation = process(joints)
-                new_joints = new_joints[:, 3:]
 
-                rotation = rotation[:-1]
-                anim.rotations[:, 0, :] = rotation[:, 0, :] * anim.rotations[:, 0, :]
-                angle = anim.rotations.qs
-                pose = np.reshape(new_joints[:, :-8], (new_joints.shape[0], -1, 3))
-                tgtanim = anim.copy()
-                tgtanim.positions[:, 0, :] = new_joints[:, :3]
-                poseR = Animation.positions_global(tgtanim)
-                print((poseR - pose).max())
-                if not exists(save_path + folder):
-                    makedirs(save_path + folder)
-                np.save(save_path + folder + "/" + cfile[:-4] + "_quat.npy", angle)
-                np.save(save_path + folder + "/" + cfile[:-4] + "_seq.npy", new_joints)
-                anim.rotations.qs[...] = anim.orients.qs[None]
-                tjoints = Animation.positions_global(anim)
-                anim.positions[...] = get_skel(tjoints[0], anim.parents)[None]
-                anim.positions[:, 0, :] = new_joints[:, :3]  # root position
-                np.save(
-                    save_path + folder + "/" + cfile[:-4] + "_skel.npy", anim.positions
-                )
-                print(anim.parents)
-                print("Success.")
+def save_motion(motion, output_dir, stem):
+    output_dir.mkdir(parents=True, exist_ok=True)
+    np.save(output_dir / f"{stem}_quat.npy", motion["quat"])
+    np.save(output_dir / f"{stem}_seq.npy", motion["seq"])
+    np.save(output_dir / f"{stem}_skel.npy", motion["skel"])
 
-print("Done.")
+
+def main():
+    args = parse_args()
+    data_path = args.data_path.resolve()
+    save_path = args.save_path.resolve()
+    if not data_path.exists():
+        raise SystemExit(f"data_path does not exist: {data_path}")
+
+    print(f"Processing: {data_path}")
+    print(f"Saving to:   {save_path}")
+    print(f"axis_transform={args.axis_transform}, forward_mode={args.forward_mode}")
+
+    total = processed = skipped = failed = 0
+    for folder, bvh_path in iter_bvh_files(data_path):
+        total += 1
+        out_dir = save_path / folder
+        out_seq = out_dir / f"{bvh_path.stem}_seq.npy"
+        if out_seq.exists() and not args.overwrite_existing:
+            skipped += 1
+            continue
+        try:
+            motion = get_inp_from_bvh(
+                bvh_path,
+                axis_transform=args.axis_transform,
+                forward_mode=args.forward_mode,
+            )
+            if motion is None:
+                skipped += 1
+                print(f"SKIP (<=1 frame): {bvh_path}")
+                continue
+            save_motion(motion, out_dir, bvh_path.stem)
+            processed += 1
+            print(f"OK: {bvh_path}")
+        except Exception as exc:  # noqa: BLE001
+            failed += 1
+            print(f"ERROR: {bvh_path}: {exc!r}")
+
+    print(f"Done. total={total} processed={processed} skipped={skipped} failed={failed}")
+
+
+if __name__ == "__main__":
+    main()

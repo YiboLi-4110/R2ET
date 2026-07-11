@@ -1,0 +1,52 @@
+# Stage-1 skeleton-aware training on smal@shepherd motion with batch2_dogs targets.
+work_dir: ./work_dir/train_shepherd_skeleton_aware_smal33
+phase: train
+alpha: 100.0
+mu: 10.0
+nu: 100.0
+omega: 5.0
+kp: 0.8
+margin: 0.3
+lam: 2
+euler_ord: yzx
+max_length: 32
+num_joint: 33
+seed: 3047
+num_workers: 8
+
+train_feeder_args:
+  # Source motion: shepherd only
+  data_path: ./datasets/shepherd/smal@shepherd/train_q
+  # stats_path: ./datasets/shepherd/stats_clamp_l005_q005
+  stats_path: ./datasets/shepherd/stats
+  shape_path: ./datasets/shepherd/smal@shepherd/train_shape
+  max_length: 32
+  # Shepherd has many clips <32 frames; see smal@shepherd_frame_stats.json
+  min_frames: 16
+  recompute_stats: false
+  # Static target skeleton pool (rest pose, 2-frame BVH exports)
+  target_data_path: ./datasets/shepherd/batch2_dogs/batch2_dogs_q
+  target_shape_path: ./datasets/shepherd/batch2_dogs/batch2_dogs_shape
+  target_min_frames: 2
+  # Cross-retarget: prob. of picking target skel/shape from batch2_dogs vs smal@shepherd.
+  # 0.0 = shepherd only, 1.0 = batch2_dogs only, 0.5 = mixed (default).
+  cross_external_target_prob: 0.5
+
+ret_model_args:
+  num_joint: 33
+  token_channels: 64
+  hidden_channels_p: 256
+  embed_channels_p: 128
+  kp: 0.8
+
+dis_model_args:
+  kp: 0.8
+
+epoch: 200
+device: [0]
+# step: [20]
+step: [120, 150]
+base_lr: 0.01
+batch_size: 32
+weight_decay: 0.0
+model_save_name: r2et_shepherd_skeleton_aware_smal33

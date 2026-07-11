@@ -32,16 +32,17 @@ import yaml
 
 from datasets.smal33_motion_io import (
     SMAL33_PARENTS,
+    build_motion_world,
+    character_label_from_path,
     dump_json,
     get_inp_from_bvh,
-    get_orient_start_smal33,
     load_retnet,
     load_shape_vector,
     load_stats,
+    rest_skel_to_world,
     setup_cuda_device,
     world_joints_from_motion,
 )
-from src.utils import put_in_world_bvh
 
 REPO_ROOT = Path(__file__).resolve().parent
 
@@ -142,26 +143,8 @@ def run_inference(model, inp_motion, tgt_motion, inp_shape, tgt_shape, stats, de
     )
 
 
-def build_input_world(inp_motion, start_rots):
-    inp_local = np.reshape(inp_motion["seq"][:, :-8], (-1, 33, 3))
-    inp_global = inp_motion["seq"][:, -8:-4]
-    inp_total = np.concatenate(
-        [inp_local.reshape(len(inp_local), -1), inp_global],
-        axis=-1,
-    )
-    world, _ = put_in_world_bvh(inp_total.copy(), start_rots)
-    return inp_total, world[0]
-
-
-def skeleton_offsets_to_global(offsets, parents):
-    offsets = np.asarray(offsets, dtype=np.float32)
-    world = np.zeros_like(offsets)
-    for j, p in enumerate(parents):
-        if p == -1:
-            world[j] = offsets[j]
-        else:
-            world[j] = world[p] + offsets[j]
-    return world
+def build_target_rest_world(tgt_motion):
+    return rest_skel_to_world(tgt_motion["skel"][0], SMAL33_PARENTS)
 
 
 def bone_lengths(world_seq, parents):
@@ -457,6 +440,10 @@ def make_summary(
         "target_character": tgt_motion.get("character"),
         "input_sequence": inp_motion.get("sequence"),
         "target_sequence": tgt_motion.get("sequence"),
+        "inp_shape_path": inp_motion.get("_shape_path", ""),
+        "tgt_shape_path": tgt_motion.get("_shape_path", ""),
+        "inp_bvh_path": inp_motion.get("_bvh_path", ""),
+        "tgt_bvh_path": tgt_motion.get("_bvh_path", ""),
     }
     summary.update(quat_norm_summary(quat_rt))
     summary.update(root_motion_summary(input_world, output_world))
@@ -469,12 +456,6 @@ def make_summary(
     if self_recon:
         summary.update(world_error_summary(input_world, output_world))
     return summary
-
-
-def build_target_rest_world(tgt_motion, stats):
-    skel0 = tgt_motion["skel"][0].reshape(33, 3)
-    skel0 = skel0 * stats["local_std"][0] + stats["local_mean"][0]
-    return skeleton_offsets_to_global(skel0, SMAL33_PARENTS)
 
 
 def prepare_paths(p):
@@ -496,6 +477,19 @@ def prepare_paths(p):
     return load_data
 
 
+def motion_parse_options(load_data, prefix):
+    return {
+        "axis_transform": load_data.get(
+            f"{prefix}_axis_transform",
+            load_data.get("axis_transform", "none"),
+        ),
+        "forward_mode": load_data.get(
+            f"{prefix}_forward_mode",
+            load_data.get("forward_mode", "across"),
+        ),
+    }
+
+
 def main():
     parser = parse_args()
     p = parser.parse_args()
@@ -513,10 +507,25 @@ def main():
     stats = load_stats(load_data["stats_path"])
     model = load_retnet(p.weights, p.ret_model_args, device)
 
-    inp_motion = get_inp_from_bvh(load_data["inp_bvh_path"])
-    tgt_motion = get_inp_from_bvh(load_data["tgt_bvh_path"])
+    inp_motion = get_inp_from_bvh(
+        load_data["inp_bvh_path"],
+        **motion_parse_options(load_data, "inp"),
+    )
+    tgt_motion = get_inp_from_bvh(
+        load_data["tgt_bvh_path"],
+        **motion_parse_options(load_data, "tgt"),
+    )
     if inp_motion is None or tgt_motion is None:
         raise SystemExit("Failed to parse input/target BVH.")
+
+    inp_motion["_bvh_path"] = str(load_data["inp_bvh_path"])
+    tgt_motion["_bvh_path"] = str(load_data["tgt_bvh_path"])
+    inp_motion["_shape_path"] = str(load_data["inp_shape_path"])
+    tgt_motion["_shape_path"] = str(load_data["tgt_shape_path"])
+    inp_motion["character"] = character_label_from_path(load_data["inp_shape_path"])
+    tgt_motion["character"] = character_label_from_path(load_data["tgt_shape_path"])
+    inp_motion["sequence"] = Path(load_data["inp_bvh_path"]).stem
+    tgt_motion["sequence"] = Path(load_data["tgt_bvh_path"]).stem
 
     inp_shape = load_shape_vector(load_data["inp_shape_path"])
     tgt_shape = load_shape_vector(load_data["tgt_shape_path"])
@@ -524,12 +533,9 @@ def main():
         model, inp_motion, tgt_motion, inp_shape, tgt_shape, stats, device
     )
 
-    from datasets.smal33_motion_io import Animation
-
-    start_rots = get_orient_start_smal33(Animation.positions_global(tgt_motion["anim"]))
-    inp_total, input_world = build_input_world(inp_motion, start_rots)
-    output_world = world_joints_from_motion(local_rt, global_rt, stats, start_rots)
-    target_rest_world = build_target_rest_world(tgt_motion, stats)
+    input_world, _, inp_total = build_motion_world(inp_motion)
+    output_world = world_joints_from_motion(local_rt, global_rt, stats)
+    target_rest_world = build_target_rest_world(tgt_motion)
     output_states = states_from_prediction(local_rt, global_rt, stats)
     vis_input_world, vis_output_world, vis_target_rest_world = prepare_visualization_data(
         input_world,
@@ -539,9 +545,9 @@ def main():
     )
     spacing = p.compare_spacing
 
-    inp_name = Path(load_data["inp_bvh_path"]).parent.name
-    tgt_name = Path(load_data["tgt_bvh_path"]).parent.name
-    seq_name = Path(load_data["inp_bvh_path"]).stem
+    inp_name = inp_motion["character"]
+    tgt_name = tgt_motion["character"]
+    seq_name = inp_motion["sequence"]
     mode_tag = "self" if p.self_recon else "cross"
     out_dir = p.save_path / f"{mode_tag}_{p.view_mode}_{inp_name}_to_{tgt_name}_{seq_name}"
     out_dir.mkdir(parents=True, exist_ok=True)

@@ -15,6 +15,13 @@ if str(OUTSIDE_CODE) not in sys.path:
 import BVH  # noqa: E402
 import Animation  # noqa: E402
 
+from smal33_motion_io import (  # noqa: E402
+    AXIS_TRANSFORMS,
+    apply_axis_transform_anim,
+    estimate_forward,
+    get_inp_from_bvh,
+)
+
 
 EXPECTED_PARENTS = np.array(
     [
@@ -254,6 +261,55 @@ def compare_contact_semantics(saved_contacts, raw_global):
     return result
 
 
+def canonical_forward_alignment(local_positions, forward_mode="across"):
+    """Check whether saved canonical local joints face +Z (Y-up convention)."""
+    if local_positions.shape[0] == 0:
+        return None
+    forward = estimate_forward(local_positions, mode=forward_mode)
+    forward = forward / np.maximum(np.linalg.norm(forward, axis=-1, keepdims=True), 1e-8)
+    forward_xz = forward[:, [0, 2]]
+    forward_xz = forward_xz / np.maximum(
+        np.linalg.norm(forward_xz, axis=-1, keepdims=True), 1e-8
+    )
+    target_xz = np.array([0.0, 1.0])
+    dots = np.sum(forward_xz * target_xz[None, :], axis=-1)
+    return {
+        "forward_mode": forward_mode,
+        "frame0_forward_xz": [float(x) for x in forward_xz[0]],
+        "dot_mean": float(dots.mean()),
+        "dot_median": float(np.median(dots)),
+        "dot_p10": float(np.percentile(dots, 10)),
+        "dot_p90": float(np.percentile(dots, 90)),
+        "frames_facing_plus_z": int((dots > 0.9).sum()),
+        "num_frames": int(dots.shape[0]),
+    }
+
+
+def compare_roundtrip(saved_seq, saved_quat, saved_skel, motion):
+    """Compare saved npy arrays with a fresh get_inp_from_bvh() result."""
+    diffs = {}
+    for name, saved, fresh in (
+        ("seq", saved_seq, motion["seq"]),
+        ("quat", saved_quat, motion["quat"]),
+        ("skel", saved_skel, motion["skel"]),
+    ):
+        if saved.shape != fresh.shape:
+            diffs[name] = {
+                "shape_match": False,
+                "saved_shape": list(saved.shape),
+                "fresh_shape": list(fresh.shape),
+            }
+            continue
+        err = np.abs(saved.astype(np.float64) - fresh.astype(np.float64))
+        diffs[name] = {
+            "shape_match": True,
+            "max": float(err.max()),
+            "mean": float(err.mean()),
+            "p99": float(np.percentile(err, 99)),
+        }
+    return diffs
+
+
 def forward_velocity_alignment(global_positions):
     if global_positions.shape[0] < 3:
         return None
@@ -313,7 +369,14 @@ def load_triplet(seq_path):
     return np.load(seq_path), np.load(quat_path), np.load(skel_path)
 
 
-def check_one(seq_path, npy_root, bvh_root):
+def check_one(
+    seq_path,
+    npy_root,
+    bvh_root,
+    axis_transform="none",
+    forward_mode="across",
+    roundtrip=False,
+):
     seq, quat, skel = load_triplet(seq_path)
     local_dim = 33 * 3
     expected_seq_dim = local_dim + 4 + 4
@@ -380,6 +443,15 @@ def check_one(seq_path, npy_root, bvh_root):
     if not set(np.unique(contacts)).issubset({0.0, 1.0}):
         result["warnings"].append("contact channels are not binary")
 
+    result["canonical_forward"] = canonical_forward_alignment(local, forward_mode=forward_mode)
+    if result["canonical_forward"] is not None:
+        cf = result["canonical_forward"]
+        if cf["dot_median"] < 0.9:
+            result["warnings"].append(
+                f"canonical forward (mode={forward_mode}) does not align with +Z; "
+                f"frame0 forward_xz={cf['frame0_forward_xz']}"
+            )
+
     # Reconstruct saved local joints from saved skeleton offsets and quaternions.
     bvh_path = find_bvh_for_seq(seq_path, npy_root, bvh_root)
     if bvh_path is not None:
@@ -388,6 +460,7 @@ def check_one(seq_path, npy_root, bvh_root):
             result["warnings"].append("paired BVH file not found")
         else:
             anim, _, _ = BVH.load(str(bvh_path))
+            anim = apply_axis_transform_anim(anim, axis_transform)
             result["bvh"] = {
                 "parents_match": bool(np.array_equal(anim.parents, EXPECTED_PARENTS)),
                 "parents": anim.parents.tolist(),
@@ -443,6 +516,41 @@ def check_one(seq_path, npy_root, bvh_root):
                 result["warnings"].append(
                     f"FK reconstruction shape mismatch: {recon_global.shape} vs {local.shape}"
                 )
+
+            if roundtrip:
+                try:
+                    motion = get_inp_from_bvh(
+                        str(bvh_path),
+                        axis_transform=axis_transform,
+                        forward_mode=forward_mode,
+                    )
+                    if motion is None:
+                        result["warnings"].append(
+                            "round-trip get_inp_from_bvh returned None (<=1 frame BVH)"
+                        )
+                    else:
+                        result["preprocess_params"] = {
+                            "axis_transform": axis_transform,
+                            "forward_mode": forward_mode,
+                            "_axis_transform": motion.get("_axis_transform"),
+                            "_forward_mode": motion.get("_forward_mode"),
+                        }
+                        result["roundtrip_diff"] = compare_roundtrip(
+                            seq, quat, skel, motion
+                        )
+                        for key, diff in result["roundtrip_diff"].items():
+                            if not diff.get("shape_match", True):
+                                result["errors"].append(
+                                    f"round-trip {key} shape mismatch: "
+                                    f"{diff.get('saved_shape')} vs {diff.get('fresh_shape')}"
+                                )
+                            elif diff.get("max", 0.0) > 1e-5:
+                                result["warnings"].append(
+                                    f"round-trip {key} max diff {diff['max']:.6g} "
+                                    f"(preprocess params may not match saved npy)"
+                                )
+                except Exception as exc:  # noqa: BLE001
+                    result["warnings"].append(f"round-trip get_inp_from_bvh failed: {exc!r}")
 
     if result["errors"]:
         result["status"] = "error"
@@ -520,6 +628,20 @@ def summarize(results):
         ]
         if contact_shifted:
             summary["contact_agreement_shifted_bug_candidate"] = basic_stats(contact_shifted)
+        forward_dots = [
+            r.get("canonical_forward", {}).get("dot_median")
+            for r in results
+            if r.get("canonical_forward", {}).get("dot_median") is not None
+        ]
+        if forward_dots:
+            summary["canonical_forward_dot_median"] = basic_stats(forward_dots)
+        roundtrip_max = [
+            r.get("roundtrip_diff", {}).get("seq", {}).get("max")
+            for r in results
+            if r.get("roundtrip_diff", {}).get("seq", {}).get("max") is not None
+        ]
+        if roundtrip_max:
+            summary["roundtrip_seq_diff_max"] = float(max(roundtrip_max))
 
     return summary
 
@@ -551,6 +673,21 @@ def print_human_report(summary, results, max_items):
                 f"{contact_sem['agreement_with_shifted_bug_candidate']['overall']:.6g}"
             )
             print(f"  contact preferred candidate: {contact_sem['preferred_candidate']}")
+        if "canonical_forward" in result and result["canonical_forward"] is not None:
+            cf = result["canonical_forward"]
+            print(
+                f"  canonical forward ({cf['forward_mode']}): "
+                f"frame0_xz={cf['frame0_forward_xz']}, dot_median={cf['dot_median']:.4f}"
+            )
+        if "roundtrip_diff" in result:
+            rt = result["roundtrip_diff"]
+            seq_diff = rt.get("seq", {})
+            if seq_diff.get("shape_match"):
+                print(
+                    f"  round-trip seq max/mean: "
+                    f"{seq_diff.get('max', float('nan')):.6g} / "
+                    f"{seq_diff.get('mean', float('nan')):.6g}"
+                )
         if "bvh" in result:
             bvh = result["bvh"]
             print(f"  bvh parents match: {bvh['parents_match']}")
@@ -587,6 +724,34 @@ def main():
         default=20,
         help="Maximum per-sequence entries shown in the human report.",
     )
+    known_axes = ", ".join(sorted(AXIS_TRANSFORMS))
+    parser.add_argument(
+        "--axis_transform",
+        default="none",
+        help=(
+            "Coordinate transform used during preprocessing (for BVH checks and round-trip). "
+            f"Known: {known_axes}. "
+            "Not needed for npy-only FK consistency (quat+skel vs seq)."
+        ),
+    )
+    parser.add_argument(
+        "--forward_mode",
+        choices=["across", "body"],
+        default="across",
+        help=(
+            "Forward estimator used during preprocessing. "
+            "Use body for smal@shepherd (matches preprocess_q_smal33.py). "
+            "Affects canonical +Z alignment check and round-trip only."
+        ),
+    )
+    parser.add_argument(
+        "--roundtrip",
+        action="store_true",
+        help=(
+            "Re-run get_inp_from_bvh on paired BVH with axis_transform/forward_mode "
+            "and compare to saved npy. Requires --bvh-root."
+        ),
+    )
     args = parser.parse_args()
 
     npy_root = args.npy_root.resolve()
@@ -595,7 +760,20 @@ def main():
     if args.limit is not None:
         seq_paths = seq_paths[: args.limit]
 
-    results = [check_one(path, npy_root, bvh_root) for path in seq_paths]
+    if args.roundtrip and bvh_root is None:
+        parser.error("--roundtrip requires --bvh-root")
+
+    results = [
+        check_one(
+            path,
+            npy_root,
+            bvh_root,
+            axis_transform=args.axis_transform,
+            forward_mode=args.forward_mode,
+            roundtrip=args.roundtrip,
+        )
+        for path in seq_paths
+    ]
     summary = summarize(results)
     payload = {"summary": summary, "results": results}
 

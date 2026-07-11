@@ -23,7 +23,10 @@ def parse_args():
         argv = sys.argv[sys.argv.index("--") + 1 :]
 
     parser = argparse.ArgumentParser(
-        description="Convert Planet Zoo FBX files to BVH while preserving the original frame length."
+        description=(
+            "Convert Planet Zoo FBX files to BVH while preserving the original frame length. "
+            "Static/rest-pose FBX files (no animation) are supported automatically."
+        )
     )
     parser.add_argument(
         "--data_path",
@@ -68,6 +71,23 @@ def parse_args():
         help="If set, re-export BVH files even when the target already exists.",
     )
     parser.add_argument(
+        "--force_rest_pose",
+        action="store_true",
+        help=(
+            "Always export a duplicated rest-pose BVH instead of using imported actions. "
+            "Useful for batch2_dogs static FBX assets."
+        ),
+    )
+    parser.add_argument(
+        "--min_rest_frames",
+        type=int,
+        default=2,
+        help=(
+            "Minimum number of frames for static/rest exports. "
+            "SMAL33 inference requires >=2 frames (default: 2)."
+        ),
+    )
+    parser.add_argument(
         "--log_every",
         type=int,
         default=10,
@@ -96,6 +116,27 @@ def parse_args():
         type=Path,
         default=None,
         help=argparse.SUPPRESS,
+    )
+    parser.add_argument(
+        "--mocap_y_up",
+        action="store_true",
+        help=(
+            "Import FBX with mocap-style axes (-Z forward, Y up). "
+            "Recommended for non-Planet-Zoo assets (e.g. smal@shepherd). "
+            "Default off preserves legacy Planet Zoo export behavior."
+        ),
+    )
+    parser.add_argument(
+        "--fbx_axis_forward",
+        type=str,
+        default="",
+        help="Optional FBX import axis_forward override (e.g. -Z). Ignored when empty.",
+    )
+    parser.add_argument(
+        "--fbx_axis_up",
+        type=str,
+        default="",
+        help="Optional FBX import axis_up override (e.g. Y). Ignored when empty.",
     )
     return parser.parse_args(argv)
 
@@ -189,29 +230,142 @@ def iter_jobs(data_root, worker_manifest=None, worker_id=0, worker_count=1):
     return [job for index, job in enumerate(jobs) if index % worker_count == worker_id]
 
 
-def convert_one(sourcepath, dumppath, cleanup_mode):
-    cleanup_blender_scene(cleanup_mode)
-    bpy.ops.import_scene.fbx(filepath=str(sourcepath))
+def find_armature_objects():
+    return sorted(
+        (obj for obj in bpy.data.objects if obj.type == "ARMATURE"),
+        key=lambda obj: obj.name,
+    )
+
+
+def animated_frame_range():
+    if not bpy.data.actions:
+        return None
 
     frame_start = int(9999)
     frame_end = int(-9999)
-    action = bpy.data.actions[-1]
-    if action.frame_range[1] > frame_end:
-        frame_end = int(action.frame_range[1])
-    if action.frame_range[0] < frame_start:
-        frame_start = int(action.frame_range[0])
+    for action in bpy.data.actions:
+        frame_start = min(frame_start, int(action.frame_range[0]))
+        frame_end = max(frame_end, int(action.frame_range[1]))
+
+    if frame_end < frame_start:
+        return None
+    return frame_start, frame_end
+
+
+def ensure_object_mode():
+    if bpy.context.object is not None and bpy.context.object.mode != "OBJECT":
+        bpy.ops.object.mode_set(mode="OBJECT")
+
+
+def prepare_rest_pose_export(min_rest_frames):
+    """Bake identical rest-pose keys so static FBX can export >= min_rest_frames."""
+    min_rest_frames = max(2, int(min_rest_frames))
+    frame_start = 1
+    frame_end = frame_start + min_rest_frames - 1
+
+    armatures = find_armature_objects()
+    if not armatures:
+        raise RuntimeError("No armature found after FBX import.")
+
+    scene = bpy.context.scene
+    scene.frame_start = frame_start
+    scene.frame_end = frame_end
+    scene.render.fps = 30
+
+    ensure_object_mode()
+    bpy.ops.object.select_all(action="DESELECT")
+
+    for arm_obj in armatures:
+        arm_obj.data.pose_position = "REST"
+        arm_obj.select_set(True)
+        bpy.context.view_layer.objects.active = arm_obj
+
+        bpy.ops.object.mode_set(mode="POSE")
+        for frame in range(frame_start, frame_end + 1):
+            scene.frame_set(frame)
+            for pose_bone in arm_obj.pose.bones:
+                pose_bone.keyframe_insert(data_path="rotation_quaternion", frame=frame)
+                if pose_bone.parent is None:
+                    pose_bone.keyframe_insert(data_path="location", frame=frame)
+        bpy.ops.object.mode_set(mode="OBJECT")
+
+    return frame_start, frame_end, "rest_pose"
+
+
+def resolve_export_frames(force_rest_pose, min_rest_frames):
+    if force_rest_pose:
+        return prepare_rest_pose_export(min_rest_frames)
+
+    frame_range = animated_frame_range()
+    if frame_range is None:
+        return prepare_rest_pose_export(min_rest_frames)
+
+    frame_start, frame_end = frame_range
+    frame_count = frame_end - frame_start + 1
+    min_rest_frames = max(2, int(min_rest_frames))
+    if frame_count < min_rest_frames:
+        return prepare_rest_pose_export(min_rest_frames)
+
+    scene = bpy.context.scene
+    scene.frame_start = frame_start
+    scene.frame_end = frame_end
+    return frame_start, frame_end, "animated"
+
+
+def resolve_fbx_import_axes(args):
+    if args.fbx_axis_forward or args.fbx_axis_up:
+        return args.fbx_axis_forward or "-Z", args.fbx_axis_up or "Y"
+    if args.mocap_y_up:
+        return "-Z", "Y"
+    return None, None
+
+
+def import_fbx(sourcepath, axis_forward=None, axis_up=None):
+    kwargs = {"filepath": str(sourcepath), "use_anim": True}
+    if axis_forward and axis_up:
+        kwargs["axis_forward"] = axis_forward
+        kwargs["axis_up"] = axis_up
+    bpy.ops.import_scene.fbx(**kwargs)
+
+
+def export_bvh(filepath, frame_start, frame_end):
+    ensure_object_mode()
+    armatures = find_armature_objects()
+    bpy.ops.object.select_all(action="DESELECT")
+    for arm_obj in armatures:
+        arm_obj.select_set(True)
+    if armatures:
+        bpy.context.view_layer.objects.active = armatures[0]
 
     bpy.ops.export_anim.bvh(
-        filepath=str(dumppath),
-        frame_start=frame_start,
-        frame_end=frame_end,
+        filepath=str(filepath),
+        frame_start=int(frame_start),
+        frame_end=int(frame_end),
         root_transform_only=True,
     )
-    bpy.data.actions.remove(bpy.data.actions[-1])
+
+
+def cleanup_imported_actions():
+    for action in list(bpy.data.actions):
+        bpy.data.actions.remove(action)
+
+
+def convert_one(sourcepath, dumppath, cleanup_mode, force_rest_pose=False, min_rest_frames=2, fbx_axes=None):
+    cleanup_blender_scene(cleanup_mode)
+    axis_forward, axis_up = fbx_axes if fbx_axes is not None else (None, None)
+    import_fbx(sourcepath, axis_forward=axis_forward, axis_up=axis_up)
+
+    frame_start, frame_end, export_mode = resolve_export_frames(
+        force_rest_pose=force_rest_pose,
+        min_rest_frames=min_rest_frames,
+    )
+    export_bvh(dumppath, frame_start, frame_end)
+    cleanup_imported_actions()
 
     return {
         "path": str(sourcepath),
         "status": "processed",
+        "export_mode": export_mode,
         "frame_start": int(frame_start),
         "frame_end": int(frame_end),
         "frame_count": int(frame_end - frame_start + 1),
@@ -288,6 +442,10 @@ def run_single_worker(args, data_root):
     if not jobs:
         raise SystemExit(f"No .fbx files found under {data_root}")
 
+    fbx_axes = resolve_fbx_import_axes(args)
+    if fbx_axes != (None, None):
+        print(f"FBX import axes: forward={fbx_axes[0]!r}, up={fbx_axes[1]!r}")
+
     worker_label = ""
     if args.worker_count > 1:
         worker_label = f" [worker {args.worker_id + 1}/{args.worker_count}]"
@@ -306,7 +464,14 @@ def run_single_worker(args, data_root):
             results.append({"path": str(sourcepath), "status": "skipped_existing"})
         else:
             try:
-                result = convert_one(sourcepath, dumppath, args.cleanup_mode)
+                result = convert_one(
+                    sourcepath,
+                    dumppath,
+                    args.cleanup_mode,
+                    force_rest_pose=args.force_rest_pose,
+                    min_rest_frames=args.min_rest_frames,
+                    fbx_axes=fbx_axes,
+                )
                 processed += 1
                 results.append(result)
             except Exception as exc:  # noqa: BLE001
@@ -398,6 +563,15 @@ def run_parallel_workers(args, data_root):
             )
             if args.overwrite_existing:
                 cmd.append("--overwrite_existing")
+            if args.force_rest_pose:
+                cmd.append("--force_rest_pose")
+            cmd.extend(["--min_rest_frames", str(args.min_rest_frames)])
+            if args.mocap_y_up:
+                cmd.append("--mocap_y_up")
+            if args.fbx_axis_forward:
+                cmd.extend(["--fbx_axis_forward", args.fbx_axis_forward])
+            if args.fbx_axis_up:
+                cmd.extend(["--fbx_axis_up", args.fbx_axis_up])
 
             print(f"Starting worker {worker_id + 1}/{workers} -> {worker_log.name}")
             with worker_log.open("w", encoding="utf-8") as log_file:

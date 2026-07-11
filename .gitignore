@@ -10,7 +10,10 @@ outside-code/sdf/sdf_pytorch.egg-info
 **/__pycache__
 datasets/Planet_Zoo_FBX-smal2
 datasets/mixamo/train_q
+datasets/shepherd
+datasets/*.json
 work_dir/
+temp/
 datasets/*.sh
 .cursorignore
 *.log

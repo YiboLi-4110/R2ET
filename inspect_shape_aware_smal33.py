@@ -37,13 +37,16 @@ from datasets.smal33_motion_io import (
     NUM_JOINTS,
     SMAL33_PARENTS,
     build_model_inputs,
+    build_motion_world,
+    character_label_from_path,
     dump_json,
     get_inp_from_bvh,
-    get_orient_start_smal33,
+    load_mesh_from_npz,
     load_retnet,
     load_shape_retnet,
     load_shape_vector,
     load_stats,
+    rest_skel_to_world,
     setup_cuda_device,
     world_joints_from_motion,
 )
@@ -76,7 +79,11 @@ def parse_args():
     parser.add_argument(
         "--mesh_path",
         type=Path,
-        default=REPO_ROOT / "datasets/Planet_Zoo_FBX-smal2/train_shape",
+        default=None,
+        help=(
+            "Deprecated fallback for Planet Zoo layouts. Cross-retarget inspect "
+            "uses load_inp_data.inp_shape_path / tgt_shape_path for mesh assets."
+        ),
     )
     parser.add_argument(
         "--save_path",
@@ -252,22 +259,6 @@ def run_stage2_inference(model, inp_motion, tgt_motion, inp_shape, tgt_shape, st
     )
 
 
-def character_from_bvh(bvh_path):
-    return Path(bvh_path).parent.name
-
-
-def load_character_mesh(mesh_path, character):
-    npz_path = Path(mesh_path) / f"{character}.npz"
-    if not npz_path.exists():
-        raise FileNotFoundError(f"Missing mesh npz for character '{character}': {npz_path}")
-    data = np.load(npz_path)
-    return {
-        "vertices": np.asarray(data["rest_vertices"], dtype=np.float32),
-        "faces": np.asarray(data["rest_faces"], dtype=np.int32),
-        "skin_weights": np.asarray(data["skinning_weights"], dtype=np.float32),
-    }
-
-
 def motion_tpose(skel_arr):
     return skel_arr[0].reshape(NUM_JOINTS, 3).astype(np.float32)
 
@@ -292,33 +283,8 @@ def skin_mesh_sequence(quat_np, rest_skel_np, mesh_data, device):
     return out.cpu().numpy().astype(np.float32)
 
 
-def build_input_world(inp_motion, start_rots):
-    inp_local = np.reshape(inp_motion["seq"][:, :-8], (-1, NUM_JOINTS, 3))
-    inp_global = inp_motion["seq"][:, -8:-4]
-    inp_total = np.concatenate(
-        [inp_local.reshape(len(inp_local), -1), inp_global],
-        axis=-1,
-    )
-    from src.utils import put_in_world_bvh
-
-    world, _ = put_in_world_bvh(inp_total.copy(), start_rots)
-    return inp_total, world[0]
-
-
-def skeleton_offsets_to_global(offsets, parents):
-    offsets = np.asarray(offsets, dtype=np.float32)
-    world = np.zeros_like(offsets)
-    for j, p in enumerate(parents):
-        if p == -1:
-            world[j] = offsets[j]
-        else:
-            world[j] = world[p] + offsets[j]
-    return world
-
-
 def build_target_rest_world(tgt_motion):
-    skel0 = motion_tpose(tgt_motion["skel"])
-    return skeleton_offsets_to_global(skel0, SMAL33_PARENTS)
+    return rest_skel_to_world(tgt_motion["skel"][0], SMAL33_PARENTS)
 
 
 def root_center_world(world_seq):
@@ -783,6 +749,8 @@ def make_summary(
     mesh_alpha,
     mesh_shade,
     show_stage1_mesh,
+    inp_character,
+    tgt_character,
 ):
     quat_norms = np.linalg.norm(quat_stage2, axis=-1)
     summary = {
@@ -800,10 +768,12 @@ def make_summary(
         "mesh_face_stride": int(mesh_face_stride),
         "mesh_alpha": float(mesh_alpha),
         "mesh_shade": bool(mesh_shade),
-        "input_character": character_from_bvh(inp_motion.get("_bvh_path", "")),
-        "target_character": character_from_bvh(tgt_motion.get("_bvh_path", "")),
+        "input_character": inp_character,
+        "target_character": tgt_character,
         "input_sequence": Path(inp_motion.get("_bvh_path", "")).stem,
         "target_sequence": Path(tgt_motion.get("_bvh_path", "")).stem,
+        "inp_shape_path": inp_motion.get("_shape_path", ""),
+        "tgt_shape_path": tgt_motion.get("_shape_path", ""),
         "quat_stage2_norm_mean": float(quat_norms.mean()),
         "quat_stage2_norm_max_abs_dev": float(np.max(np.abs(quat_norms - 1.0))),
     }
@@ -841,6 +811,19 @@ def prepare_paths(p):
     return load_data
 
 
+def motion_parse_options(load_data, prefix):
+    return {
+        "axis_transform": load_data.get(
+            f"{prefix}_axis_transform",
+            load_data.get("axis_transform", "none"),
+        ),
+        "forward_mode": load_data.get(
+            f"{prefix}_forward_mode",
+            load_data.get("forward_mode", "across"),
+        ),
+    }
+
+
 def main():
     parser = parse_args()
     p = parser.parse_args()
@@ -864,13 +847,21 @@ def main():
     if p.show_stage1_mesh:
         stage1_model = load_retnet(p.stage1_weights, p.ret_model_args, device)
 
-    inp_motion = get_inp_from_bvh(load_data["inp_bvh_path"])
-    tgt_motion = get_inp_from_bvh(load_data["tgt_bvh_path"])
+    inp_motion = get_inp_from_bvh(
+        load_data["inp_bvh_path"],
+        **motion_parse_options(load_data, "inp"),
+    )
+    tgt_motion = get_inp_from_bvh(
+        load_data["tgt_bvh_path"],
+        **motion_parse_options(load_data, "tgt"),
+    )
     if inp_motion is None or tgt_motion is None:
         raise SystemExit("Failed to parse input/target BVH.")
 
     inp_motion["_bvh_path"] = str(load_data["inp_bvh_path"])
     tgt_motion["_bvh_path"] = str(load_data["tgt_bvh_path"])
+    inp_motion["_shape_path"] = str(load_data["inp_shape_path"])
+    tgt_motion["_shape_path"] = str(load_data["tgt_shape_path"])
 
     inp_shape = load_shape_vector(load_data["inp_shape_path"])
     tgt_shape = load_shape_vector(load_data["tgt_shape_path"])
@@ -905,10 +896,10 @@ def main():
     local_s2 = local_s2[:num_frames]
     global_s2 = global_s2[:num_frames]
 
-    inp_char = character_from_bvh(load_data["inp_bvh_path"])
-    tgt_char = character_from_bvh(load_data["tgt_bvh_path"])
-    inp_mesh = load_character_mesh(p.mesh_path, inp_char)
-    tgt_mesh = load_character_mesh(p.mesh_path, tgt_char)
+    inp_char = character_label_from_path(load_data["inp_shape_path"])
+    tgt_char = character_label_from_path(load_data["tgt_shape_path"])
+    inp_mesh = load_mesh_from_npz(load_data["inp_shape_path"])
+    tgt_mesh = load_mesh_from_npz(load_data["tgt_shape_path"])
     inp_faces = subsample_faces(inp_mesh["faces"], p.mesh_face_stride)
     tgt_faces = subsample_faces(tgt_mesh["faces"], p.mesh_face_stride)
 
@@ -922,11 +913,8 @@ def main():
         stage1_verts = skin_mesh_sequence(quat_s1, tgt_tpose, tgt_mesh, device)
     stage2_verts = skin_mesh_sequence(quat_s2, tgt_tpose, tgt_mesh, device)
 
-    from datasets.smal33_motion_io import Animation
-
-    start_rots = get_orient_start_smal33(Animation.positions_global(tgt_motion["anim"]))
-    _, input_world = build_input_world(inp_motion, start_rots)
-    stage2_world = world_joints_from_motion(local_s2, global_s2, stats, start_rots)
+    input_world, _, _ = build_motion_world(inp_motion)
+    stage2_world = world_joints_from_motion(local_s2, global_s2, stats)
     target_rest_world = build_target_rest_world(tgt_motion)
 
     vis_input_world, vis_stage2_world, vis_target_rest_world = prepare_visualization_data(
@@ -957,8 +945,8 @@ def main():
         p.show_stage1_mesh,
     )
 
-    inp_name = Path(load_data["inp_bvh_path"]).parent.name
-    tgt_name = Path(load_data["tgt_bvh_path"]).parent.name
+    inp_name = inp_char
+    tgt_name = tgt_char
     seq_name = Path(load_data["inp_bvh_path"]).stem
     mode_tag = "self" if p.self_recon else "cross"
     out_dir = p.save_path / f"{mode_tag}_{p.view_mode}_{inp_name}_to_{tgt_name}_{seq_name}"
@@ -1010,6 +998,8 @@ def main():
         mesh_alpha=p.mesh_alpha,
         mesh_shade=p.mesh_shade,
         show_stage1_mesh=p.show_stage1_mesh,
+        inp_character=inp_char,
+        tgt_character=tgt_char,
     )
     dump_json(out_dir / "summary.json", summary)
 

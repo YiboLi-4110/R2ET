@@ -1,0 +1,37 @@
+# Stage-2 shape-aware visual inspection for smal@shepherd / batch2_dogs.
+# Update stage2_weights to your latest checkpoint (saved every 5 epochs).
+stage2_weights: ./work_dir/train_shepherd_shapeaware_smal33/r2et_shepherd_shape_aware_smal33_ret-185.pt
+save_path: ./work_dir/train_shepherd_shapeaware_smal33/inspect
+device: 0
+self_recon: false
+view_mode: root_centered
+compare_spacing: 2.0
+mesh_spacing: 3.0
+show_target_rest: true
+show_stage1_mesh: false
+frame_margin: 0.08
+camera_zoom: 1.0
+view_elev: 18.0
+view_azim: 105.0
+mesh_face_stride: 1
+mesh_alpha: 1.0
+mesh_shade: true
+fps: 30
+
+ret_model_args:
+  num_joint: 33
+  token_channels: 64
+  hidden_channels_p: 256
+  embed_channels_p: 128
+  kp: 0.8
+
+load_inp_data:
+  stats_path: ./datasets/shepherd/stats
+  inp_shape_path: ./datasets/shepherd/smal@shepherd/train_shape/shepherd@Lie.npz
+  tgt_shape_path: ./datasets/shepherd/batch2_dogs/batch2_dogs_shape/拉布拉多_13-0.npz
+  inp_bvh_path: ./datasets/shepherd/smal@shepherd/train_char/shepherd@Lie/shepherd@Lie_belly_loop_2_smal_dog-foot_on_ground.bvh
+  tgt_bvh_path: ./datasets/shepherd/batch2_dogs/batch2_dogs_char/拉布拉多/拉布拉多_13-0.bvh
+  inp_axis_transform: shepherd_y_z_x
+  inp_forward_mode: body
+  tgt_axis_transform: shepherd_y_z_x
+  tgt_forward_mode: body

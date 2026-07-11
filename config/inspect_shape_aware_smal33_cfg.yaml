@@ -1,5 +1,5 @@
 # Stage-2 shape-aware SMAL33 visual inspection (phase B).
-device: 0
+device: 2
 self_recon: false
 view_mode: root_centered
 compare_spacing: 2.0
@@ -22,9 +22,9 @@ fps: 30
 
 # stage1_weights only required when show_stage1_mesh: true
 stage1_weights: ./work_dir/train_skeleton_aware_smal33/r2et_skeleton_aware_smal33_ret-96.pt
-stage2_weights: ./work_dir/train_shapeaware_smal33/r2et_shape_aware_smal33_ret-12.pt
-mesh_path: ./datasets/Planet_Zoo_FBX-smal2/train_shape
-save_path: ./work_dir/train_shapeaware_smal33/inspect
+stage2_weights: ./work_dir/train_shape_aware_smal33/r2et_shape_aware_smal33_ret-12.pt
+# mesh_path is optional/deprecated; mesh visualization uses inp/tgt_shape_path below.
+save_path: ./work_dir/train_shape_aware_smal33/inspect
 
 ret_model_args:
   num_joint: 33
@@ -34,8 +34,19 @@ ret_model_args:
   kp: 0.8
 
 load_inp_data:
-  inp_shape_path: ./datasets/Planet_Zoo_FBX-smal2/train_shape/west_african_lion_female.npz
-  tgt_shape_path: ./datasets/Planet_Zoo_FBX-smal2/train_shape/sand_cat_male.npz
+  inp_shape_path: ./datasets/shepherd/smal@shepherd/train_shape/shepherd@Bark.npz
+  # inp_shape_path: ./datasets/Planet_Zoo_FBX-smal2/train_shape/bengal_tiger_female.npz
+  # tgt_shape_path: ./datasets/shepherd/smal@shepherd/train_shape/shepherd@Crouch.npz
+  tgt_shape_path: ./datasets/shepherd/batch2_dogs/batch2_dogs_shape/哈士奇_5-0.npz
   stats_path: ./datasets/Planet_Zoo_FBX-smal2/stats
-  inp_bvh_path: ./datasets/Planet_Zoo_FBX-smal2/train_char/west_african_lion_female/west_african_lion_female@runtowalkturnl.bvh
-  tgt_bvh_path: ./datasets/Planet_Zoo_FBX-smal2/train_char/sand_cat_male/sand_cat_male@climbbeam.bvh
+  inp_bvh_path: ./datasets/shepherd/smal@shepherd/train_char/shepherd@Bark/shepherd@Bark_smal_dog-foot_on_ground.bvh
+  # inp_bvh_path: ./datasets/Planet_Zoo_FBX-smal2/train_char/bengal_tiger_female/bengal_tiger_female@jump5m.bvh
+  # tgt_bvh_path: ./datasets/shepherd/smal@shepherd/train_char/shepherd@Crouch/shepherd@Crouch_B_RM_smal_dog-foot_on_ground.bvh
+  tgt_bvh_path: ./datasets/shepherd/batch2_dogs/batch2_dogs_char/哈士奇/哈士奇_5-0.bvh
+
+  # axis_transform: shepherd_y_z_x
+  # forward_mode: body
+  inp_axis_transform: shepherd_y_z_x
+  inp_forward_mode: body
+  tgt_axis_transform: shepherd_y_z_x
+  tgt_forward_mode: body

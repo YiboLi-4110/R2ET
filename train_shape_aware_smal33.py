@@ -45,7 +45,16 @@ def get_parser():
     parser.add_argument(
         "--mesh_path",
         default="./datasets/Planet_Zoo_FBX-smal2/train_shape/",
-        help="directory of shape .npz files",
+        help="directory of shape .npz files (fallback when mesh_paths is unset)",
+    )
+    parser.add_argument(
+        "--mesh_paths",
+        nargs="+",
+        default=None,
+        help=(
+            "one or more shape .npz directories for geometry loss; "
+            "use both shepherd train_shape and batch2_dogs_shape for mixed training"
+        ),
     )
     parser.add_argument(
         "--model_save_name",
@@ -78,6 +87,12 @@ def get_parser():
     )
     parser.add_argument(
         "--mu", type=float, default=10.0, help="weight factor for twist loss"
+    )
+    parser.add_argument(
+        "--omega_smooth",
+        type=float,
+        default=0.0,
+        help="weight factor for optional second-order temporal smooth loss",
     )
     parser.add_argument(
         "--kappa",
@@ -356,6 +371,57 @@ def load_model(ret_model, dis_model, arg, device):
         dis_model.load_state_dict(dis_weights, strict=False)
 
 
+def load_mesh_file_dic(mesh_paths, work_dir=None, arg=None):
+    """Load shape .npz files from one or more directories keyed by stem name."""
+    if isinstance(mesh_paths, (str, os.PathLike)):
+        mesh_paths = [mesh_paths]
+    mesh_file_dic = {}
+    for mesh_root in mesh_paths:
+        mesh_root = os.fspath(mesh_root)
+        if not exists(mesh_root):
+            raise FileNotFoundError(f"mesh path not found: {mesh_root}")
+        file_names = sorted(
+            f
+            for f in listdir(mesh_root)
+            if not f.startswith(".") and f.endswith(".npz")
+        )
+        if not file_names:
+            raise FileNotFoundError(f"No .npz mesh files under {mesh_root}")
+        for mesh_name in file_names:
+            key = mesh_name.split(".")[0]
+            if key in mesh_file_dic:
+                msg = (
+                    f"WARN: duplicate mesh key '{key}' in {mesh_root}, "
+                    "keeping the first copy"
+                )
+                if arg is not None:
+                    print_log_txt(msg, work_dir, arg)
+                else:
+                    print(msg)
+                continue
+            mesh_file_dic[key] = np.load(join(mesh_root, mesh_name))
+    return mesh_file_dic
+
+
+def validate_mesh_keys(mesh_file_dic, shape_keys, work_dir, arg):
+    missing = sorted(set(shape_keys) - set(mesh_file_dic.keys()))
+    if missing:
+        preview = ", ".join(missing[:8])
+        suffix = f" ... (+{len(missing) - 8} more)" if len(missing) > 8 else ""
+        raise KeyError(
+            "Missing mesh .npz for shape keys used by the feeder: "
+            f"{preview}{suffix}. "
+            "Set mesh_paths to include both shepherd train_shape and "
+            "batch2_dogs_shape (or merge them into one directory)."
+        )
+    print_log_txt(
+        f"Mesh keys validated: {len(mesh_file_dic)} npz loaded, "
+        f"{len(shape_keys)} shape keys in feeder",
+        work_dir,
+        arg,
+    )
+
+
 def build_mesh_vertex_groups(mesh_file_dic, data_feeder):
     torso_bone_lst = data_feeder.torso_bone_lst.tolist()
     head_bone_lst = data_feeder.head_bone_lst.tolist()
@@ -431,7 +497,6 @@ def train(
     quat_std,
     parents,
     mesh_file_dic,
-    all_names,
     mesh_groups,
     mesh_geom_cache,
     epoch,
@@ -456,6 +521,8 @@ def train(
     epoch_rep_rh = AverageMeter()
     epoch_rep_tail_hind = AverageMeter()
     epoch_att = AverageMeter()
+    epoch_smooth = AverageMeter()
+    epoch_smooth_weighted = AverageMeter()
 
     local_mean_np = local_mean
     local_std_np = local_std
@@ -474,6 +541,8 @@ def train(
         shapeA,
         shapeB,
         quatA_cp,
+        shape_keyA,
+        shape_keyB,
     ) in enumerate(data_loader):
         seqA = seqA.float().to(device, non_blocking=True)
         skelA = skelA.float().to(device, non_blocking=True)
@@ -544,6 +613,18 @@ def train(
         twist_loss = RetNet.get_rot_cons_loss(arg.alpha, arg.euler_ord, quatB_rt)
         gen_loss = RetNet.get_gen_loss(score_fake, aeReg)
         regular_loss = RetNet.get_regularization_loss(weights_sp, mask)
+        if arg.omega_smooth > 0:
+            local_std_ts = torch.from_numpy(local_std_np).to(localB_rt.device)
+            local_mean_ts = torch.from_numpy(local_mean_np).to(localB_rt.device)
+            local_std_ts = local_std_ts.reshape(1, 1, num_joint, 3)
+            local_mean_ts = local_mean_ts.reshape(1, 1, num_joint, 3)
+            localB_rt_denorm = (
+                localB_rt * local_std_ts
+                + local_mean_ts
+            ).float()
+            smooth_loss = RetNet.get_smooth_loss(localB_rt_denorm, mask)
+        else:
+            smooth_loss = torch.tensor(0.0, device=localB_rt.device)
         base_loss = (
             local_ae_loss + quat_ae_loss + arg.mu * twist_loss + arg.tao * regular_loss
         )
@@ -563,7 +644,13 @@ def train(
         compute_front = arg.enable_front_rdf and not arg.disable_front_rdf
 
         for i in range(bs):
-            mesh_name = all_names[indexesB[i]]
+            mesh_name = shape_keyB[i]
+            if mesh_name not in mesh_geom_cache:
+                raise KeyError(
+                    f"Missing mesh geometry cache for shape key '{mesh_name}'. "
+                    "Ensure mesh_paths covers shepherd train_shape and "
+                    "batch2_dogs_shape."
+                )
             cache_entry = mesh_geom_cache[mesh_name]
             vertices = cache_entry["vertices"].to(device, non_blocking=True)
             sk_weights = cache_entry["skin_weights"].to(device, non_blocking=True)
@@ -673,7 +760,8 @@ def train(
         if compute_att:
             rep_loss_terms.append(w_att * att_loss)
         rep_loss = arg.kappa * sum(rep_loss_terms)
-        ret_loss = arg.lam * gen_loss + base_loss
+        smooth_weighted = arg.omega_smooth * smooth_loss
+        ret_loss = arg.lam * gen_loss + base_loss + smooth_weighted
 
         freeze_all()
         for para in module.weights_dec.parameters():
@@ -696,6 +784,8 @@ def train(
         epoch_rep_lh.update(float(rep_loss_lh.item()))
         epoch_rep_rh.update(float(rep_loss_rh.item()))
         epoch_rep_tail_hind.update(float(rep_loss_tail_hind.item()))
+        epoch_smooth.update(float(smooth_loss.item()))
+        epoch_smooth_weighted.update(float(smooth_weighted.item()))
         if compute_att:
             epoch_att.update(float(att_loss.item()))
 
@@ -704,6 +794,7 @@ def train(
             loss_sp=float(rep_loss.item()),
             tail_hind=float(rep_loss_tail_hind.item()),
             lh=float(rep_loss_lh.item()),
+            smooth=float(smooth_loss.item()),
             time=end_time - start_time,
         )
         pbar.update(1)
@@ -717,6 +808,8 @@ def train(
         "rep_lh": epoch_rep_lh,
         "rep_rh": epoch_rep_rh,
         "rep_tail_hind": epoch_rep_tail_hind,
+        "smooth": epoch_smooth,
+        "smooth_weighted": epoch_smooth_weighted,
         "epoch_time": epoch_time,
     }
     compute_front = arg.enable_front_rdf and not arg.disable_front_rdf
@@ -736,6 +829,8 @@ def train(
         logger.add_scalar("train_rep_lh", reduced["rep_lh"], epoch)
         logger.add_scalar("train_rep_rh", reduced["rep_rh"], epoch)
         logger.add_scalar("train_rep_tail_hind", reduced["rep_tail_hind"], epoch)
+        logger.add_scalar("train_smooth", reduced["smooth"], epoch)
+        logger.add_scalar("train_smooth_weighted", reduced["smooth_weighted"], epoch)
         if compute_front:
             logger.add_scalar("train_rep_lf", reduced["rep_lf"], epoch)
             logger.add_scalar("train_rep_rf", reduced["rep_rf"], epoch)
@@ -774,7 +869,8 @@ def main(arg):
     )
     print_log_txt(
         f"RDF weights front={arg.w_front if compute_front else 0}(off) "
-        f"hind={arg.w_hind} tail_hind={arg.w_tail_hind}",
+        f"hind={arg.w_hind} tail_hind={arg.w_tail_hind} "
+        f"omega_smooth={arg.omega_smooth}",
         arg.work_dir,
         arg,
     )
@@ -844,20 +940,19 @@ def main(arg):
             join(arg.work_dir, arg.model_save_name, "train_log"), "train"
         )
 
-    mesh_file_dic = {}
-    file_names = sorted(
-        f for f in listdir(arg.mesh_path) if not f.startswith(".") and f.endswith(".npz")
-    )
-    if not file_names:
-        raise FileNotFoundError(f"No .npz mesh files under {arg.mesh_path}")
-    for mesh_name in file_names:
-        mesh_file_dic[mesh_name.split(".")[0]] = np.load(join(arg.mesh_path, mesh_name))
+    mesh_paths = getattr(arg, "mesh_paths", None) or [arg.mesh_path]
+    mesh_file_dic = load_mesh_file_dic(mesh_paths, arg.work_dir, arg)
+    validate_mesh_keys(mesh_file_dic, data_feeder.shape_dic.keys(), arg.work_dir, arg)
 
     mesh_groups = build_mesh_vertex_groups(mesh_file_dic, data_feeder)
     mesh_geom_cache = build_mesh_geometry_cache(mesh_file_dic, mesh_groups)
+    cross_prob = getattr(data_feeder, "cross_external_target_prob", None)
+    target_pool_size = len(getattr(data_feeder, "target_pool", []) or [])
     print_log_txt(
-        f"Loaded {len(mesh_file_dic)} shape meshes (hull precomputed) | "
-        f"paw bones={PAW_JOINT_INDICES} | sequences={len(data_feeder)}",
+        f"Loaded {len(mesh_file_dic)} shape meshes from {len(mesh_paths)} path(s) "
+        f"(hull precomputed) | paw bones={PAW_JOINT_INDICES} | "
+        f"sequences={len(data_feeder)} | target_pool={target_pool_size} | "
+        f"cross_external_target_prob={cross_prob}",
         arg.work_dir,
         arg,
     )
@@ -895,7 +990,6 @@ def main(arg):
             data_feeder.quat_std,
             data_feeder.parents,
             mesh_file_dic,
-            data_feeder.all_names,
             mesh_groups,
             mesh_geom_cache,
             i,
@@ -911,6 +1005,8 @@ def main(arg):
             f"rep_lh:{epoch_stats['rep_lh']:.4f}  "
             f"rep_rh:{epoch_stats['rep_rh']:.4f}  "
             f"rep_tail_hind:{epoch_stats['rep_tail_hind']:.4f}  "
+            f"smooth:{epoch_stats['smooth']:.6f}  "
+            f"smooth_w:{epoch_stats['smooth_weighted']:.6f}  "
             f"epoch time:{epoch_stats['epoch_time']:.4f}  lr:{lr:.6g}"
         )
         print_log_txt(log_txt, arg.work_dir, arg)
