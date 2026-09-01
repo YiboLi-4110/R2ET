@@ -293,11 +293,24 @@ def _set_mix_rgba(mix_node, fac, color_a, color_b):
     return mix_node.inputs["Fac"], mix_node.outputs["Color"]
 
 
-def make_source_wireframe_material(name, render_cfg):
-    """
-    Face fill + triangle wireframe, with mild facing shading for volume.
+def source_material_mode(render_cfg) -> str:
+    raw = str((render_cfg or {}).get("source_material_mode", "wireframe")).strip().lower()
+    if raw in ("wireframe", "wire", "tris", "triangles"):
+        return "wireframe"
+    if raw in ("shaded", "fill", "smooth", "nowire", "no_wire", "no_wireframe"):
+        return "shaded"
+    if raw in ("solid", "principled", "diffuse"):
+        return "solid"
+    if raw in ("emission", "emit", "unlit"):
+        return "emission"
+    return "wireframe"
 
-    Readable under simple_preview (emission-based) while showing mesh topology.
+
+def make_source_fill_material(name, render_cfg, *, with_wireframe: bool):
+    """
+    Face fill + mild facing shade (same look as the original Source lane).
+
+    ``with_wireframe=True`` overlays triangle edges; False keeps the fill only.
     """
     face_color = _parse_rgba(
         render_cfg.get("source_material_color"),
@@ -329,10 +342,6 @@ def make_source_wireframe_material(name, render_cfg):
     nodes.clear()
 
     out = nodes.new(type="ShaderNodeOutputMaterial")
-    wire = nodes.new(type="ShaderNodeWireframe")
-    wire.use_pixel_size = use_pixel_size
-    if "Size" in wire.inputs:
-        wire.inputs["Size"].default_value = wire_size
 
     # Mild facing term so silhouettes/folds read as 3D under flat ambient light.
     layer = nodes.new(type="ShaderNodeLayerWeight")
@@ -353,6 +362,14 @@ def make_source_wireframe_material(name, render_cfg):
     face_emit.inputs["Strength"].default_value = face_strength
     links.new(mix_out, face_emit.inputs["Color"])
 
+    if not with_wireframe:
+        links.new(face_emit.outputs["Emission"], out.inputs["Surface"])
+        return mat
+
+    wire = nodes.new(type="ShaderNodeWireframe")
+    wire.use_pixel_size = use_pixel_size
+    if "Size" in wire.inputs:
+        wire.inputs["Size"].default_value = wire_size
     wire_emit = nodes.new(type="ShaderNodeEmission")
     wire_emit.inputs["Color"].default_value = tuple(float(c) for c in wire_color)
     wire_emit.inputs["Strength"].default_value = wire_strength
@@ -365,21 +382,257 @@ def make_source_wireframe_material(name, render_cfg):
     return mat
 
 
+def _force_opaque_material(mat):
+    """Keep Source clay fully opaque in EEVEE / EEVEE Next."""
+    if hasattr(mat, "blend_method"):
+        mat.blend_method = "OPAQUE"
+    if hasattr(mat, "shadow_method"):
+        try:
+            mat.shadow_method = "OPAQUE"
+        except Exception:
+            pass
+    if hasattr(mat, "show_transparent_back"):
+        mat.show_transparent_back = False
+    if hasattr(mat, "use_screen_refraction"):
+        mat.use_screen_refraction = False
+    if hasattr(mat, "use_raytrace_refraction"):
+        mat.use_raytrace_refraction = False
+    if hasattr(mat, "surface_render_method"):
+        try:
+            mat.surface_render_method = "DITHERED"
+        except Exception:
+            pass
+    if hasattr(mat, "use_transparency_overlap"):
+        mat.use_transparency_overlap = False
+    if hasattr(mat, "diffuse_color") and len(mat.diffuse_color) >= 4:
+        mat.diffuse_color = (
+            float(mat.diffuse_color[0]),
+            float(mat.diffuse_color[1]),
+            float(mat.diffuse_color[2]),
+            1.0,
+        )
+
+
+def _parse_vec3_cfg(value, default):
+    if value is None:
+        return tuple(float(v) for v in default)
+    vals = [float(v) for v in value]
+    if len(vals) < 3:
+        return tuple(float(v) for v in default)
+    return (vals[0], vals[1], vals[2])
+
+
+def _math(nodes, op, a=None, b=None):
+    node = nodes.new(type="ShaderNodeMath")
+    node.operation = op
+    if a is not None:
+        node.inputs[0].default_value = float(a)
+    if b is not None and len(node.inputs) > 1:
+        node.inputs[1].default_value = float(b)
+    return node
+
+
+def make_source_volume_material(name, render_cfg):
+    """
+    Clay-like Source shading without triangle edges.
+
+    Self-contained (emission) so simple_preview's flat world does not wash it
+    out, and the textured retarget dog is left unchanged: wrap Lambert key
+    light + cavity AO + fresnel rim.
+    """
+    face_color = _parse_rgba(
+        render_cfg.get("source_material_color"),
+        (0.98, 0.96, 0.90, 1.0),
+    )
+    shade_color = _parse_rgba(
+        render_cfg.get("source_shade_color"),
+        (0.16, 0.16, 0.18, 1.0),
+    )
+    # Extra darken on the unlit side so a near-white fill still reads as volume.
+    contrast = float(render_cfg.get("source_volume_contrast", 1.85))
+    ambient = tuple(
+        max(min(c / max(contrast, 1e-6), 1.0), 0.0) for c in shade_color[:3]
+    ) + (shade_color[3],)
+    wrap = float(render_cfg.get("source_key_light_wrap", 0.32))
+    wrap = max(min(wrap, 0.95), 0.0)
+    ao_distance = float(render_cfg.get("source_ao_distance", 0.18))
+    ao_factor = float(render_cfg.get("source_ao_factor", 0.72))
+    rim_strength = float(render_cfg.get("source_rim_strength", 0.18))
+    rim_color = _parse_rgba(
+        render_cfg.get("source_rim_color"),
+        (
+            min(face_color[0] * 1.05, 1.0),
+            min(face_color[1] * 1.05, 1.0),
+            min(face_color[2] * 1.08, 1.0),
+            1.0,
+        ),
+    )
+    strength = float(render_cfg.get("source_shaded_emission_strength", 1.05))
+    form_blend = float(render_cfg.get("source_form_blend", 0.42))
+    light_dir = _parse_vec3_cfg(
+        render_cfg.get("source_key_light_dir"),
+        (0.28, -0.18, 0.94),  # world +Z up, slight camera-side key
+    )
+
+    mat = bpy.data.materials.new(name=name)
+    mat.use_nodes = True
+    _force_opaque_material(mat)
+    # Winding is corrected on the mesh; cull inner faces so legs cannot show through.
+    if hasattr(mat, "use_backface_culling"):
+        mat.use_backface_culling = True
+    nodes = mat.node_tree.nodes
+    links = mat.node_tree.links
+    nodes.clear()
+
+    out = nodes.new(type="ShaderNodeOutputMaterial")
+    geom = nodes.new(type="ShaderNodeNewGeometry")
+
+    light = nodes.new(type="ShaderNodeCombineXYZ")
+    light.inputs[0].default_value = float(light_dir[0])
+    light.inputs[1].default_value = float(light_dir[1])
+    light.inputs[2].default_value = float(light_dir[2])
+    light_n = nodes.new(type="ShaderNodeVectorMath")
+    light_n.operation = "NORMALIZE"
+    links.new(light.outputs["Vector"], light_n.inputs[0])
+
+    nrm = nodes.new(type="ShaderNodeVectorMath")
+    nrm.operation = "NORMALIZE"
+    if "Normal" in geom.outputs:
+        links.new(geom.outputs["Normal"], nrm.inputs[0])
+    else:
+        links.new(geom.outputs[0], nrm.inputs[0])
+    # Flipped winding: outer faces are backfacing, so N points inward and
+    # a +Z key looks like ground-up lighting. Flip N on backfaces.
+    nrm_neg = nodes.new(type="ShaderNodeVectorMath")
+    nrm_neg.operation = "SCALE"
+    links.new(nrm.outputs["Vector"], nrm_neg.inputs[0])
+    scale_in = nrm_neg.inputs["Scale"] if "Scale" in nrm_neg.inputs else nrm_neg.inputs[3]
+    scale_in.default_value = -1.0
+    try:
+        mix_n = nodes.new(type="ShaderNodeMix")
+        mix_n.data_type = "VECTOR"
+        n_fac = mix_n.inputs[0]
+        n_a = mix_n.inputs[4] if len(mix_n.inputs) > 4 else mix_n.inputs[1]
+        n_b = mix_n.inputs[5] if len(mix_n.inputs) > 5 else mix_n.inputs[2]
+        n_out = mix_n.outputs[1] if len(mix_n.outputs) > 1 else mix_n.outputs[0]
+    except Exception:
+        mix_n = nodes.new(type="ShaderNodeMixRGB")
+        n_fac = mix_n.inputs["Fac"]
+        n_a = mix_n.inputs["Color1"]
+        n_b = mix_n.inputs["Color2"]
+        n_out = mix_n.outputs["Color"]
+    back = geom.outputs["Backfacing"] if "Backfacing" in geom.outputs else None
+    if back is not None:
+        links.new(back, n_fac)
+    links.new(nrm.outputs["Vector"], n_a)
+    links.new(nrm_neg.outputs["Vector"], n_b)
+
+    dot = nodes.new(type="ShaderNodeVectorMath")
+    dot.operation = "DOT_PRODUCT"
+    links.new(n_out, dot.inputs[0])
+    links.new(light_n.outputs["Vector"], dot.inputs[1])
+    dot_out = dot.outputs["Value"] if "Value" in dot.outputs else dot.outputs[0]
+
+    # wrap Lambert: saturate((N·L + wrap) / (1 + wrap))
+    add_w = _math(nodes, "ADD", b=wrap)
+    links.new(dot_out, add_w.inputs[0])
+    div_w = _math(nodes, "DIVIDE", b=1.0 + wrap)
+    links.new(add_w.outputs["Value"], div_w.inputs[0])
+    clamp_w = _math(nodes, "MAXIMUM", b=0.0)
+    links.new(div_w.outputs["Value"], clamp_w.inputs[0])
+    clamp_h = _math(nodes, "MINIMUM", b=1.0)
+    links.new(clamp_w.outputs["Value"], clamp_h.inputs[0])
+    # Contrast: raise wrapped term so the dark side stays dark.
+    gamma = _math(nodes, "POWER", b=1.25)
+    links.new(clamp_h.outputs["Value"], gamma.inputs[0])
+
+    try:
+        mix_lit = nodes.new(type="ShaderNodeMix")
+    except Exception:
+        mix_lit = nodes.new(type="ShaderNodeMixRGB")
+    fac_lit, lit_out = _set_mix_rgba(mix_lit, 0.5, ambient, face_color)
+    links.new(gamma.outputs["Value"], fac_lit)
+
+    ao = nodes.new(type="ShaderNodeAmbientOcclusion")
+    if "Normal" in ao.inputs:
+        links.new(n_out, ao.inputs["Normal"])
+    if "Distance" in ao.inputs:
+        ao.inputs["Distance"].default_value = ao_distance
+    if hasattr(ao, "samples"):
+        try:
+            ao.samples = 8
+        except Exception:
+            pass
+    ao_inv = _math(nodes, "SUBTRACT", a=1.0)
+    ao_src = ao.outputs["AO"] if "AO" in ao.outputs else ao.outputs[0]
+    links.new(ao_src, ao_inv.inputs[1])
+    ao_scl = _math(nodes, "MULTIPLY", b=ao_factor)
+    links.new(ao_inv.outputs["Value"], ao_scl.inputs[0])
+
+    try:
+        mix_ao = nodes.new(type="ShaderNodeMix")
+    except Exception:
+        mix_ao = nodes.new(type="ShaderNodeMixRGB")
+    dark = (0.04, 0.04, 0.05, 1.0)
+    dummy = (0.5, 0.5, 0.5, 1.0)
+    fac_ao, ao_out = _set_mix_rgba(mix_ao, 0.0, dummy, dark)
+    if mix_ao.bl_idname == "ShaderNodeMix":
+        links.new(lit_out, mix_ao.inputs[6])
+    else:
+        links.new(lit_out, mix_ao.inputs["Color1"])
+    links.new(ao_scl.outputs["Value"], fac_ao)
+
+    layer = nodes.new(type="ShaderNodeLayerWeight")
+    if "Normal" in layer.inputs:
+        links.new(n_out, layer.inputs["Normal"])
+    if "Blend" in layer.inputs:
+        layer.inputs["Blend"].default_value = form_blend
+    try:
+        mix_rim = nodes.new(type="ShaderNodeMix")
+    except Exception:
+        mix_rim = nodes.new(type="ShaderNodeMixRGB")
+    fac_rim, rim_out = _set_mix_rgba(mix_rim, 0.0, dummy, rim_color)
+    if mix_rim.bl_idname == "ShaderNodeMix":
+        links.new(ao_out, mix_rim.inputs[6])
+    else:
+        links.new(ao_out, mix_rim.inputs["Color1"])
+    rim_scale = _math(nodes, "MULTIPLY", b=rim_strength)
+    fresnel = layer.outputs["Fresnel"] if "Fresnel" in layer.outputs else layer.outputs[0]
+    links.new(fresnel, rim_scale.inputs[0])
+    links.new(rim_scale.outputs["Value"], fac_rim)
+
+    emit = nodes.new(type="ShaderNodeEmission")
+    emit.inputs["Strength"].default_value = strength
+    links.new(rim_out, emit.inputs["Color"])
+    links.new(emit.outputs["Emission"], out.inputs["Surface"])
+    return mat
+
+
+def make_source_wireframe_material(name, render_cfg):
+    """Face fill + triangle wireframe, with mild facing shading for volume."""
+    return make_source_fill_material(name, render_cfg, with_wireframe=True)
+
+
 def make_source_readable_material(name, render_cfg):
     """
     Source-lane material.
 
-    Default ``wireframe``: bright fill + triangle edges (+ facing shade).
-    Also supports ``emission`` / ``solid`` for simpler previews.
+    Modes:
+      wireframe — original: bright fill + triangle edges (+ facing shade)
+      shaded    — clay volume (key light + AO + rim), no triangle edges
+      emission  — uniform unlit color
+      solid     — Principled BSDF
     """
     color = _parse_rgba(
         render_cfg.get("source_material_color"),
         (0.86, 0.86, 0.90, 1.0),
     )
-    mode = str(render_cfg.get("source_material_mode", "wireframe")).strip().lower()
-    if mode in ("wireframe", "wire", "tris", "triangles"):
-        return make_source_wireframe_material(name, render_cfg)
-    if mode in ("solid", "principled", "diffuse"):
+    mode = source_material_mode(render_cfg)
+    if mode == "wireframe":
+        return make_source_fill_material(name, render_cfg, with_wireframe=True)
+    if mode == "shaded":
+        return make_source_volume_material(name, render_cfg)
+    if mode == "solid":
         mat = make_material(name, color)
         bsdf = mat.node_tree.nodes.get("Principled BSDF") if mat.use_nodes else None
         if bsdf is not None:
@@ -410,6 +663,61 @@ def apply_source_flat_shading(obj):
         poly.use_smooth = False
     if hasattr(mesh, "update"):
         mesh.update()
+
+
+def apply_source_smooth_shading(obj):
+    """Hide triangle facets when Source is drawn without a wire overlay."""
+    mesh = obj.data
+    for poly in mesh.polygons:
+        poly.use_smooth = True
+    if hasattr(mesh, "update"):
+        mesh.update()
+
+
+def winding_corrected_faces(faces, axis_matrix):
+    """
+    ``y_up_to_z_up`` has det -1, which reverses triangle winding.
+
+    Without this, outward faces become backfaces: EEVEE culls them (see-through
+    hind legs) and Lambert lighting reads as coming from below.
+    """
+    faces = np.asarray(faces, dtype=np.int32)
+    det = float(np.linalg.det(np.asarray(axis_matrix, dtype=np.float64)))
+    if det >= 0.0 or faces.ndim != 2 or faces.shape[1] < 3:
+        return faces
+    return np.ascontiguousarray(faces[:, ::-1])
+
+
+def ensure_outward_normals(obj):
+    mesh = obj.data
+    try:
+        import bmesh
+
+        bm = bmesh.new()
+        bm.from_mesh(mesh)
+        if bm.faces:
+            bmesh.ops.recalc_face_normals(bm, faces=bm.faces)
+        bm.to_mesh(mesh)
+        bm.free()
+    except Exception as exc:
+        print(f"[render-arp-seq][warn] recalc_face_normals failed: {exc}")
+    if hasattr(mesh, "calc_normals_split"):
+        try:
+            mesh.calc_normals_split()
+        except Exception:
+            pass
+    if hasattr(mesh, "update"):
+        mesh.update()
+
+
+def correct_source_mesh_winding(obj, axis_matrix, *, faces_already_reversed: bool):
+    det = float(np.linalg.det(np.asarray(axis_matrix, dtype=np.float64)))
+    if det < 0.0 and not faces_already_reversed:
+        try:
+            obj.data.flip_normals()
+        except Exception as exc:
+            print(f"[render-arp-seq][warn] flip_normals failed: {exc}")
+    ensure_outward_normals(obj)
 
 
 def resolve_action_labels(manifest: dict, frame_count: int) -> list[str]:
@@ -712,6 +1020,7 @@ def render_sequence(manifest: dict, args):
             )
             name = f"{sequence_id}_source_{clip_i}_{clip.get('clip_id', 'clip')}"
             src_obj = None
+            src_faces = winding_corrected_faces(clip["faces"], axis_matrix)
             # Prefer solid/emission for Source readability (no texture + ambient
             # preview otherwise looks like a shadow blob).
             if not force_solid:
@@ -735,15 +1044,26 @@ def render_sequence(manifest: dict, args):
                 src_obj = mesh_from_vertices(
                     name,
                     clip_verts[0],
-                    clip["faces"],
+                    src_faces,
                     make_source_readable_material(f"{name}_mat", render_cfg),
                 )
+                faces_already_reversed = True
             else:
                 replace_object_materials(
                     src_obj,
                     make_source_readable_material(f"{name}_mat", render_cfg),
                 )
-            apply_source_flat_shading(src_obj)
+                # FBX template faces are independent of the numpy winding fix.
+                faces_already_reversed = False
+            correct_source_mesh_winding(
+                src_obj,
+                axis_matrix,
+                faces_already_reversed=faces_already_reversed,
+            )
+            if source_material_mode(render_cfg) == "wireframe":
+                apply_source_flat_shading(src_obj)
+            else:
+                apply_source_smooth_shading(src_obj)
             # Only first clip visible initially.
             src_obj.hide_render = clip_i != 0
             src_obj.hide_viewport = clip_i != 0

@@ -22,7 +22,7 @@
 #     --stage2_mode stage1
 
 output_root: ./visualization/videos/arp_sequence
-sequence_id: bianmu_3_forpkl_selected_dog_actions_demo_0
+sequence_id: bianmu_3_forpkl_selected_dog_actions_demo_1
 device: 0
 
 camera:
@@ -61,8 +61,9 @@ render:
   # Flat preview for clear motion delivery: no floor, no sun/fill shadows.
   # Set false to restore the previous lit + checker-floor look.
   simple_preview: true
-  simple_preview_bg_rgb: [0.35, 0.35, 0.35]
-  simple_preview_world_strength: 1.45
+  # Slightly darker than the cream clay so Source reads as a solid silhouette.
+  simple_preview_bg_rgb: [0.26, 0.26, 0.28]
+  simple_preview_world_strength: 1.0
   # Legacy lit-floor knobs (used only when simple_preview=false).
   sun_light_position_xyz: [20.0, 20.0, 60.0]
   sun_light_rotation_deg: [55.0, -20.0, 40.0]
@@ -80,18 +81,31 @@ render:
     retarget: 0.0
     arp: 0.0
   # Used when sequence.show_source / --show_source is enabled (Source | Retarget).
-  lane_spacing: 1.5
-  # Source lane: bright fill + triangle wireframe (readable under simple_preview).
-  # Modes: wireframe | emission | solid
-  source_material_mode: wireframe
-  source_material_color: [0.95, 0.95, 0.95, 1.0]
-  source_shade_color: [0.65, 0.65, 0.68, 1.0]
+  lane_spacing: 2.1
+  # Source lane material (simple_preview):
+  #   wireframe — original: bright fill + triangle edges
+  #   shaded    — clay volume (side light + AO + rim), no triangle edges
+  #   emission  — uniform unlit color
+  #   solid     — Principled BSDF
+  source_material_mode: shaded
+  # Warm cream vs darker gray bg; shade much darker so volume does not wash out.
+  source_material_color: [0.98, 0.96, 0.90, 1.0]
+  source_shade_color: [0.16, 0.16, 0.18, 1.0]
   source_emission_strength: 1.7
+  # shaded-only volume knobs (ignored by wireframe):
+  # Blender Z-up: key from above + slight camera-right (not from below).
+  source_key_light_dir: [0.32, -0.22, 0.92]
+  source_key_light_wrap: 0.32
+  source_ao_distance: 0.18
+  source_ao_factor: 0.72
+  source_rim_strength: 0.18
+  source_volume_contrast: 1.9
+  source_shaded_emission_strength: 1.08
   source_wire_color: [0.02, 0.02, 0.03, 1.0]
   source_wire_emission_strength: 2.5
   source_wire_size: 1.3
   source_wire_pixel_size: true
-  source_form_blend: 0.3
+  source_form_blend: 0.52
   add_floor: false
   auto_align_floor: true
   floor_z: 0.0
@@ -245,64 +259,64 @@ target:
 # For r2et, inp_shape_path is optional if source.train_shape can resolve it.
 sources:
   # 素材包当中挑选出的适配狗的源动作序列
-  - clip_id: shepherd@Attack_J_smal_dog-foot_on_ground
-    inp_bvh_path: ./datasets/shepherd/smal@shepherd/train_char/shepherd@Attack/shepherd@Attack_J_smal_dog-foot_on_ground.bvh
-  - clip_id: shepherd@Attack_L_smal_dog-foot_on_ground
-    inp_bvh_path: ./datasets/shepherd/smal@shepherd/train_char/shepherd@Attack/shepherd@Attack_L_smal_dog-foot_on_ground.bvh
-  - clip_id: shepherd@Bark_smal_dog-foot_on_ground
-    inp_bvh_path: ./datasets/shepherd/smal@shepherd/train_char/shepherd@Bark/shepherd@Bark_smal_dog-foot_on_ground.bvh
-  - clip_id: shepherd@Crouch_B_RM_smal_dog-foot_on_ground
-    inp_bvh_path: ./datasets/shepherd/smal@shepherd/train_char/shepherd@Crouch/shepherd@Crouch_B_RM_smal_dog-foot_on_ground.bvh
-  - clip_id: shepherd@Crouch_BL_RM_smal_dog-foot_on_ground
-    inp_bvh_path: ./datasets/shepherd/smal@shepherd/train_char/shepherd@Crouch/shepherd@Crouch_BL_RM_smal_dog-foot_on_ground.bvh
-  - clip_id: shepherd@Crouch_BR_RM_smal_dog-foot_on_ground
-    inp_bvh_path: ./datasets/shepherd/smal@shepherd/train_char/shepherd@Crouch/shepherd@Crouch_BR_RM_smal_dog-foot_on_ground.bvh
-  - clip_id: shepherd@Crouch_F_RM_smal_dog-foot_on_ground
-    inp_bvh_path: ./datasets/shepherd/smal@shepherd/train_char/shepherd@Crouch/shepherd@Crouch_F_RM_smal_dog-foot_on_ground.bvh
-  - clip_id: shepherd@Crouch_Idle_loop_2_smal_dog-foot_on_ground
-    inp_bvh_path: ./datasets/shepherd/smal@shepherd/train_char/shepherd@Crouch/shepherd@Crouch_Idle_loop_2_smal_dog-foot_on_ground.bvh
-  - clip_id: shepherd@Crouch_R_RM_smal_dog-foot_on_ground
-    inp_bvh_path: ./datasets/shepherd/smal@shepherd/train_char/shepherd@Crouch/shepherd@Crouch_R_RM_smal_dog-foot_on_ground.bvh
-  - clip_id: shepherd@Crouch_L_RM_smal_dog-foot_on_ground
-    inp_bvh_path: ./datasets/shepherd/smal@shepherd/train_char/shepherd@Crouch/shepherd@Crouch_L_RM_smal_dog-foot_on_ground.bvh
-  - clip_id: shepherd@Digging_loop_smal_dog-foot_on_ground
-    inp_bvh_path: ./datasets/shepherd/smal@shepherd/train_char/shepherd@Digging/shepherd@Digging_loop_smal_dog-foot_on_ground.bvh
-  - clip_id: shepherd@Drink_loop_smal_dog-foot_on_ground
-    inp_bvh_path: ./datasets/shepherd/smal@shepherd/train_char/shepherd@Drink/shepherd@Drink_loop_smal_dog-foot_on_ground.bvh
-  - clip_id: shepherd@Eat_loop_smal_dog-foot_on_ground
-    inp_bvh_path: ./datasets/shepherd/smal@shepherd/train_char/shepherd@Eat/shepherd@Eat_loop_smal_dog-foot_on_ground.bvh
-  - clip_id: shepherd@Eat_tear_smal_dog-foot_on_ground
-    inp_bvh_path: ./datasets/shepherd/smal@shepherd/train_char/shepherd@Eat/shepherd@Eat_tear_smal_dog-foot_on_ground.bvh
-  - clip_id: shepherd@Hit_F_smal_dog-foot_on_ground
-    inp_bvh_path: ./datasets/shepherd/smal@shepherd/train_char/shepherd@Hit/shepherd@Hit_F_smal_dog-foot_on_ground.bvh
-  - clip_id: shepherd@Hit_M_smal_dog-foot_on_ground
-    inp_bvh_path: ./datasets/shepherd/smal@shepherd/train_char/shepherd@Hit/shepherd@Hit_M_smal_dog-foot_on_ground.bvh
-  - clip_id: shepherd@Idle_2_smal_dog-foot_on_ground
-    inp_bvh_path: ./datasets/shepherd/smal@shepherd/train_char/shepherd@Idle/shepherd@Idle_2_smal_dog-foot_on_ground.bvh
-  - clip_id: shepherd@Idle_3_smal_dog-foot_on_ground
-    inp_bvh_path: ./datasets/shepherd/smal@shepherd/train_char/shepherd@Idle/shepherd@Idle_3_smal_dog-foot_on_ground.bvh
-  - clip_id: shepherd@Idle_4_smal_dog-foot_on_ground
-    inp_bvh_path: ./datasets/shepherd/smal@shepherd/train_char/shepherd@Idle/shepherd@Idle_4_smal_dog-foot_on_ground.bvh
-  - clip_id: shepherd@Idle_7_smal_dog-foot_on_ground
-    inp_bvh_path: ./datasets/shepherd/smal@shepherd/train_char/shepherd@Idle/shepherd@Idle_7_smal_dog-foot_on_ground.bvh
-  - clip_id: shepherd@Jump_Run_RM_smal_dog-foot_on_ground
-    inp_bvh_path: ./datasets/shepherd/smal@shepherd/train_char/shepherd@Jump/shepherd@Jump_Run_RM_smal_dog-foot_on_ground.bvh
-  - clip_id: shepherd@Put_down_smal_dog-foot_on_ground
-    inp_bvh_path: ./datasets/shepherd/smal@shepherd/train_char/shepherd@Put/shepherd@Put_down_smal_dog-foot_on_ground.bvh
-  - clip_id: shepherd@Run_F_RM_smal_dog-foot_on_ground
-    inp_bvh_path: ./datasets/shepherd/smal@shepherd/train_char/shepherd@Run/shepherd@Run_F_RM_smal_dog-foot_on_ground.bvh
+  # - clip_id: shepherd@Attack_J_smal_dog-foot_on_ground
+  #   inp_bvh_path: ./datasets/shepherd/smal@shepherd/train_char/shepherd@Attack/shepherd@Attack_J_smal_dog-foot_on_ground.bvh
+  # - clip_id: shepherd@Attack_L_smal_dog-foot_on_ground
+  #   inp_bvh_path: ./datasets/shepherd/smal@shepherd/train_char/shepherd@Attack/shepherd@Attack_L_smal_dog-foot_on_ground.bvh
+  # - clip_id: shepherd@Bark_smal_dog-foot_on_ground
+  #   inp_bvh_path: ./datasets/shepherd/smal@shepherd/train_char/shepherd@Bark/shepherd@Bark_smal_dog-foot_on_ground.bvh
+  # - clip_id: shepherd@Crouch_B_RM_smal_dog-foot_on_ground
+  #   inp_bvh_path: ./datasets/shepherd/smal@shepherd/train_char/shepherd@Crouch/shepherd@Crouch_B_RM_smal_dog-foot_on_ground.bvh
+  # - clip_id: shepherd@Crouch_BL_RM_smal_dog-foot_on_ground
+  #   inp_bvh_path: ./datasets/shepherd/smal@shepherd/train_char/shepherd@Crouch/shepherd@Crouch_BL_RM_smal_dog-foot_on_ground.bvh
+  # - clip_id: shepherd@Crouch_BR_RM_smal_dog-foot_on_ground
+  #   inp_bvh_path: ./datasets/shepherd/smal@shepherd/train_char/shepherd@Crouch/shepherd@Crouch_BR_RM_smal_dog-foot_on_ground.bvh
+  # - clip_id: shepherd@Crouch_F_RM_smal_dog-foot_on_ground
+  #   inp_bvh_path: ./datasets/shepherd/smal@shepherd/train_char/shepherd@Crouch/shepherd@Crouch_F_RM_smal_dog-foot_on_ground.bvh
+  # - clip_id: shepherd@Crouch_Idle_loop_2_smal_dog-foot_on_ground
+  #   inp_bvh_path: ./datasets/shepherd/smal@shepherd/train_char/shepherd@Crouch/shepherd@Crouch_Idle_loop_2_smal_dog-foot_on_ground.bvh
+  # - clip_id: shepherd@Crouch_R_RM_smal_dog-foot_on_ground
+  #   inp_bvh_path: ./datasets/shepherd/smal@shepherd/train_char/shepherd@Crouch/shepherd@Crouch_R_RM_smal_dog-foot_on_ground.bvh
+  # - clip_id: shepherd@Crouch_L_RM_smal_dog-foot_on_ground
+  #   inp_bvh_path: ./datasets/shepherd/smal@shepherd/train_char/shepherd@Crouch/shepherd@Crouch_L_RM_smal_dog-foot_on_ground.bvh
+  # - clip_id: shepherd@Digging_loop_smal_dog-foot_on_ground
+  #   inp_bvh_path: ./datasets/shepherd/smal@shepherd/train_char/shepherd@Digging/shepherd@Digging_loop_smal_dog-foot_on_ground.bvh
+  # - clip_id: shepherd@Drink_loop_smal_dog-foot_on_ground
+  #   inp_bvh_path: ./datasets/shepherd/smal@shepherd/train_char/shepherd@Drink/shepherd@Drink_loop_smal_dog-foot_on_ground.bvh
+  # - clip_id: shepherd@Eat_loop_smal_dog-foot_on_ground
+  #   inp_bvh_path: ./datasets/shepherd/smal@shepherd/train_char/shepherd@Eat/shepherd@Eat_loop_smal_dog-foot_on_ground.bvh
+  # - clip_id: shepherd@Eat_tear_smal_dog-foot_on_ground
+  #   inp_bvh_path: ./datasets/shepherd/smal@shepherd/train_char/shepherd@Eat/shepherd@Eat_tear_smal_dog-foot_on_ground.bvh
+  # - clip_id: shepherd@Hit_F_smal_dog-foot_on_ground
+  #   inp_bvh_path: ./datasets/shepherd/smal@shepherd/train_char/shepherd@Hit/shepherd@Hit_F_smal_dog-foot_on_ground.bvh
+  # - clip_id: shepherd@Hit_M_smal_dog-foot_on_ground
+  #   inp_bvh_path: ./datasets/shepherd/smal@shepherd/train_char/shepherd@Hit/shepherd@Hit_M_smal_dog-foot_on_ground.bvh
+  # - clip_id: shepherd@Idle_2_smal_dog-foot_on_ground
+  #   inp_bvh_path: ./datasets/shepherd/smal@shepherd/train_char/shepherd@Idle/shepherd@Idle_2_smal_dog-foot_on_ground.bvh
+  # - clip_id: shepherd@Idle_3_smal_dog-foot_on_ground
+  #   inp_bvh_path: ./datasets/shepherd/smal@shepherd/train_char/shepherd@Idle/shepherd@Idle_3_smal_dog-foot_on_ground.bvh
+  # - clip_id: shepherd@Idle_4_smal_dog-foot_on_ground
+  #   inp_bvh_path: ./datasets/shepherd/smal@shepherd/train_char/shepherd@Idle/shepherd@Idle_4_smal_dog-foot_on_ground.bvh
+  # - clip_id: shepherd@Idle_7_smal_dog-foot_on_ground
+  #   inp_bvh_path: ./datasets/shepherd/smal@shepherd/train_char/shepherd@Idle/shepherd@Idle_7_smal_dog-foot_on_ground.bvh
+  # - clip_id: shepherd@Jump_Run_RM_smal_dog-foot_on_ground
+  #   inp_bvh_path: ./datasets/shepherd/smal@shepherd/train_char/shepherd@Jump/shepherd@Jump_Run_RM_smal_dog-foot_on_ground.bvh
+  # - clip_id: shepherd@Put_down_smal_dog-foot_on_ground
+  #   inp_bvh_path: ./datasets/shepherd/smal@shepherd/train_char/shepherd@Put/shepherd@Put_down_smal_dog-foot_on_ground.bvh
+  # - clip_id: shepherd@Run_F_RM_smal_dog-foot_on_ground
+  #   inp_bvh_path: ./datasets/shepherd/smal@shepherd/train_char/shepherd@Run/shepherd@Run_F_RM_smal_dog-foot_on_ground.bvh
   - clip_id: shepherd@Run_L_RM_smal_dog-foot_on_ground
     inp_bvh_path: ./datasets/shepherd/smal@shepherd/train_char/shepherd@Run/shepherd@Run_L_RM_smal_dog-foot_on_ground.bvh
   - clip_id: shepherd@Run_R_RM_smal_dog-foot_on_ground
     inp_bvh_path: ./datasets/shepherd/smal@shepherd/train_char/shepherd@Run/shepherd@Run_R_RM_smal_dog-foot_on_ground.bvh
-  - clip_id: shepherd@Turn_R_RM_smal_dog-foot_on_ground
-    inp_bvh_path: ./datasets/shepherd/smal@shepherd/train_char/shepherd@Turn/shepherd@Turn_R_RM_smal_dog-foot_on_ground.bvh
-  - clip_id: shepherd@Turn_R180_RM_smal_dog-foot_on_ground
-    inp_bvh_path: ./datasets/shepherd/smal@shepherd/train_char/shepherd@Turn/shepherd@Turn_R180_RM_smal_dog-foot_on_ground.bvh
-  - clip_id: shepherd@Turn_L_RM_smal_dog-foot_on_ground
-    inp_bvh_path: ./datasets/shepherd/smal@shepherd/train_char/shepherd@Turn/shepherd@Turn_L_RM_smal_dog-foot_on_ground.bvh
-  - clip_id: shepherd@Turn_L180_RM_smal_dog-foot_on_ground
-    inp_bvh_path: ./datasets/shepherd/smal@shepherd/train_char/shepherd@Turn/shepherd@Turn_L180_RM_smal_dog-foot_on_ground.bvh
+  # - clip_id: shepherd@Turn_R_RM_smal_dog-foot_on_ground
+  #   inp_bvh_path: ./datasets/shepherd/smal@shepherd/train_char/shepherd@Turn/shepherd@Turn_R_RM_smal_dog-foot_on_ground.bvh
+  # - clip_id: shepherd@Turn_R180_RM_smal_dog-foot_on_ground
+  #   inp_bvh_path: ./datasets/shepherd/smal@shepherd/train_char/shepherd@Turn/shepherd@Turn_R180_RM_smal_dog-foot_on_ground.bvh
+  # - clip_id: shepherd@Turn_L_RM_smal_dog-foot_on_ground
+  #   inp_bvh_path: ./datasets/shepherd/smal@shepherd/train_char/shepherd@Turn/shepherd@Turn_L_RM_smal_dog-foot_on_ground.bvh
+  # - clip_id: shepherd@Turn_L180_RM_smal_dog-foot_on_ground
+  #   inp_bvh_path: ./datasets/shepherd/smal@shepherd/train_char/shepherd@Turn/shepherd@Turn_L180_RM_smal_dog-foot_on_ground.bvh
 
   # 素材包当中挑选出的适配猫的源动作序列
   # - clip_id: shepherd@Attack_L_smal_dog-foot_on_ground
