@@ -33,6 +33,7 @@ from render_fourway_blender import (
     bbox_world_for_meshes,
     clean_scene,
     parse_vec3,
+    resolve_lane_label_z,
     set_render_settings,
     setup_camera,
     setup_camera_from_absolute,
@@ -360,7 +361,6 @@ def render_case(manifest, args):
     animated = []
     label_xy = []
     max_top_z = float(floor_z)
-    label_z_offset = float(render_cfg.get("lane_label_z_offset", 0.25))
     for lane_idx, (lane_key, title, verts_key, faces_key, color) in enumerate(lanes):
         verts = transform_lane_vertices(
             npz[verts_key],
@@ -392,7 +392,7 @@ def render_case(manifest, args):
         max_top_z = max(max_top_z, float(mx[2]))
         label_xy.append((title, float(center_xy[0]), float(center_xy[1])))
 
-    unified_label_z = max_top_z + label_z_offset
+    unified_label_z = resolve_lane_label_z(render_cfg, max_top_z, floor_z=floor_z)
     label_specs = [(title, (x, y, unified_label_z)) for title, x, y in label_xy]
 
     center, radius = bbox_world_for_meshes()

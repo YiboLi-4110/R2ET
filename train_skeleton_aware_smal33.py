@@ -110,6 +110,12 @@ def get_parser():
         nargs="+",
         help="the epoch where optimizer reduce the learning rate",
     )
+    parser.add_argument(
+        "--lr-gamma",
+        type=float,
+        default=0.1,
+        help="multiplicative factor of learning rate decay at each step milestone",
+    )
     parser.add_argument("--epoch", type=int, default=30, help="training epoch")
     parser.add_argument("--seed", type=int, default=3047, help="random seed")
     parser.add_argument(
@@ -463,10 +469,10 @@ def main(arg):
     )
 
     scheduler_ret = torch.optim.lr_scheduler.MultiStepLR(
-        optimizer_ret, milestones=arg.step, gamma=0.1, last_epoch=-1
+        optimizer_ret, milestones=arg.step, gamma=arg.lr_gamma, last_epoch=-1
     )
     scheduler_dis = torch.optim.lr_scheduler.MultiStepLR(
-        optimizer_dis, milestones=arg.step, gamma=0.1, last_epoch=-1
+        optimizer_dis, milestones=arg.step, gamma=arg.lr_gamma, last_epoch=-1
     )
 
     train_writer = SummaryWriter(

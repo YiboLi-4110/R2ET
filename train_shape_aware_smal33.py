@@ -89,12 +89,6 @@ def get_parser():
         "--mu", type=float, default=10.0, help="weight factor for twist loss"
     )
     parser.add_argument(
-        "--omega_smooth",
-        type=float,
-        default=0.0,
-        help="weight factor for optional second-order temporal smooth loss",
-    )
-    parser.add_argument(
         "--kappa",
         type=float,
         default=0.5,
@@ -117,6 +111,72 @@ def get_parser():
         type=float,
         default=3.5,
         help="RDF weight for tail vs hind legs (highest priority)",
+    )
+    parser.add_argument(
+        "--w_tail_lift",
+        type=float,
+        default=2.0,
+        help=(
+            "weight for the directional tail-lift prior: when the tail "
+            "penetrates a hind leg, push tail vertices above the hind-leg top "
+            "(+Y up). Encourages the human-intuitive 'raise tail' fix instead "
+            "of lateral swing. Set 0 to disable."
+        ),
+    )
+    parser.add_argument(
+        "--w_tail_mid",
+        type=float,
+        default=0.0,
+        help=(
+            "weight for the sagittal midplane prior: when the tail penetrates "
+            "a hind leg, soft-penalize |tail_x - Root.X| so lift prefers the "
+            "body midplane over swinging sideways (same gate as w_tail_lift). "
+            "Set 0 to disable."
+        ),
+    )
+    parser.add_argument(
+        "--w_tail_fold",
+        type=float,
+        default=1.0,
+        help=(
+            "weight for the tail self-fold penalty: penalize the tail curve "
+            "reversing on itself (distal tail curling back into the upper tail "
+            "-> self-penetration). Only tail joints get their own shape DOF "
+            "(proximal), so this mainly guards residual distal reversal. "
+            "Set 0 to disable."
+        ),
+    )
+    parser.add_argument(
+        "--w_tail_torso",
+        type=float,
+        default=2.0,
+        help=(
+            "RDF weight for tail vs torso+head: once the tail lifts it can "
+            "press onto the back/torso; penalize that penetration. Only used "
+            "when enable_tail_torso_rdf is on."
+        ),
+    )
+    parser.add_argument(
+        "--enable_tail_torso_rdf",
+        action="store_true",
+        default=True,
+        help="compute tail-vs-torso+head RDF (guards tail pressing on back).",
+    )
+    parser.add_argument(
+        "--disable_tail_torso_rdf",
+        action="store_true",
+        help="skip tail-vs-torso RDF entirely.",
+    )
+    parser.add_argument(
+        "--w_tail_taper",
+        type=float,
+        default=0.0,
+        help=(
+            "weight for the distal-bend taper penalty: keep tail bending "
+            "root-dominant (raise Tail1 first, distal follows) instead of "
+            "curling a mid/distal bone. 0 disables (default off; enable if the "
+            "tail still lifts from the middle)."
+        ),
     )
     parser.add_argument(
         "--enable_front_rdf",
@@ -196,6 +256,12 @@ def get_parser():
         default=[],
         nargs="+",
         help="the epoch where optimizer reduce the learning rate",
+    )
+    parser.add_argument(
+        "--lr_gamma",
+        type=float,
+        default=0.1,
+        help="multiplicative factor of learning rate decay at each step milestone",
     )
     parser.add_argument(
         "--epoch", type=int, default=50, help="stop training in which epoch"
@@ -520,9 +586,12 @@ def train(
     epoch_rep_lh = AverageMeter()
     epoch_rep_rh = AverageMeter()
     epoch_rep_tail_hind = AverageMeter()
+    epoch_rep_tail_lift = AverageMeter()
+    epoch_rep_tail_mid = AverageMeter()
+    epoch_rep_tail_fold = AverageMeter()
+    epoch_rep_tail_torso = AverageMeter()
+    epoch_rep_tail_taper = AverageMeter()
     epoch_att = AverageMeter()
-    epoch_smooth = AverageMeter()
-    epoch_smooth_weighted = AverageMeter()
 
     local_mean_np = local_mean
     local_std_np = local_std
@@ -613,18 +682,6 @@ def train(
         twist_loss = RetNet.get_rot_cons_loss(arg.alpha, arg.euler_ord, quatB_rt)
         gen_loss = RetNet.get_gen_loss(score_fake, aeReg)
         regular_loss = RetNet.get_regularization_loss(weights_sp, mask)
-        if arg.omega_smooth > 0:
-            local_std_ts = torch.from_numpy(local_std_np).to(localB_rt.device)
-            local_mean_ts = torch.from_numpy(local_mean_np).to(localB_rt.device)
-            local_std_ts = local_std_ts.reshape(1, 1, num_joint, 3)
-            local_mean_ts = local_mean_ts.reshape(1, 1, num_joint, 3)
-            localB_rt_denorm = (
-                localB_rt * local_std_ts
-                + local_mean_ts
-            ).float()
-            smooth_loss = RetNet.get_smooth_loss(localB_rt_denorm, mask)
-        else:
-            smooth_loss = torch.tensor(0.0, device=localB_rt.device)
         base_loss = (
             local_ae_loss + quat_ae_loss + arg.mu * twist_loss + arg.tao * regular_loss
         )
@@ -639,9 +696,15 @@ def train(
 
         rep_loss_lf, rep_loss_rf, rep_loss_lh, rep_loss_rh = 0, 0, 0, 0
         rep_loss_tail_hind = 0
+        rep_loss_tail_lift = 0
+        rep_loss_tail_mid = 0
+        rep_loss_tail_fold = 0
+        rep_loss_tail_torso = 0
+        rep_loss_tail_taper = 0
         att_loss = 0
         compute_att = arg.enable_att_loss and not arg.disable_att_loss
         compute_front = arg.enable_front_rdf and not arg.disable_front_rdf
+        compute_tail_torso = arg.enable_tail_torso_rdf and not arg.disable_tail_torso_rdf
 
         for i in range(bs):
             mesh_name = shape_keyB[i]
@@ -655,7 +718,18 @@ def train(
             vertices = cache_entry["vertices"].to(device, non_blocking=True)
             sk_weights = cache_entry["skin_weights"].to(device, non_blocking=True)
 
-            lf, rf, lh, rh, tail_hind = RetNet.get_rep_loss_part(
+            (
+                lf,
+                rf,
+                lh,
+                rh,
+                tail_hind,
+                tail_lift,
+                tail_fold,
+                tail_torso,
+                tail_taper,
+                tail_mid,
+            ) = RetNet.get_rep_loss_part(
                 parents,
                 quatB_rt[i],
                 t_poseB[i],
@@ -673,6 +747,7 @@ def train(
                 frame_stride=arg.geo_frame_stride,
                 hull_cache=cache_entry,
                 compute_front_rdf=compute_front,
+                compute_tail_torso=compute_tail_torso,
             )
             if compute_att:
                 att_loss += RetNet.get_att_loss(
@@ -693,6 +768,11 @@ def train(
             rep_loss_lh += lh
             rep_loss_rh += rh
             rep_loss_tail_hind += tail_hind
+            rep_loss_tail_lift += tail_lift
+            rep_loss_tail_mid += tail_mid
+            rep_loss_tail_fold += tail_fold
+            rep_loss_tail_torso += tail_torso
+            rep_loss_tail_taper += tail_taper
 
         if compute_front:
             rep_loss_lf /= bs
@@ -703,6 +783,14 @@ def train(
         rep_loss_lh /= bs
         rep_loss_rh /= bs
         rep_loss_tail_hind /= bs
+        rep_loss_tail_lift /= bs
+        rep_loss_tail_mid /= bs
+        rep_loss_tail_fold /= bs
+        rep_loss_tail_taper /= bs
+        if compute_tail_torso:
+            rep_loss_tail_torso /= bs
+        else:
+            rep_loss_tail_torso = torch.tensor(0.0, device=quatB_rt.device)
         if compute_att:
             att_loss /= bs
         else:
@@ -711,6 +799,11 @@ def train(
         w_front = arg.w_front if compute_front else 0.0
         w_hind = arg.w_hind
         w_tail_hind = arg.w_tail_hind
+        w_tail_lift = arg.w_tail_lift
+        w_tail_mid = arg.w_tail_mid
+        w_tail_fold = arg.w_tail_fold
+        w_tail_torso = arg.w_tail_torso if compute_tail_torso else 0.0
+        w_tail_taper = arg.w_tail_taper
         w_att = arg.w_att if compute_att else 0.0
 
         def freeze_all():
@@ -745,7 +838,19 @@ def train(
             para.requires_grad = True
         partial_backward(w_hind * rep_loss_rh)
 
-        tail_geo_loss = w_tail_hind * rep_loss_tail_hind
+        # Tail decoder is driven by the (per-leg) repulsion, the directional
+        # lift prior, the sagittal midplane prior, the self-fold penalty, the
+        # tail-vs-torso repulsion, and the distal-bend taper so it raises the
+        # tail as a coherent, root-driven curve in the body midplane instead of
+        # curling the distal tail, swinging sideways, or pressing onto the back.
+        tail_geo_loss = (
+            w_tail_hind * rep_loss_tail_hind
+            + w_tail_lift * rep_loss_tail_lift
+            + w_tail_mid * rep_loss_tail_mid
+            + w_tail_fold * rep_loss_tail_fold
+            + w_tail_torso * rep_loss_tail_torso
+            + w_tail_taper * rep_loss_tail_taper
+        )
         freeze_all()
         for para in module.delta_tail_dec.parameters():
             para.requires_grad = True
@@ -754,14 +859,18 @@ def train(
         rep_loss_terms = [
             w_hind * (rep_loss_lh + rep_loss_rh),
             w_tail_hind * rep_loss_tail_hind,
+            w_tail_lift * rep_loss_tail_lift,
+            w_tail_mid * rep_loss_tail_mid,
+            w_tail_fold * rep_loss_tail_fold,
+            w_tail_torso * rep_loss_tail_torso,
+            w_tail_taper * rep_loss_tail_taper,
         ]
         if compute_front:
             rep_loss_terms.insert(0, w_front * (rep_loss_lf + rep_loss_rf))
         if compute_att:
             rep_loss_terms.append(w_att * att_loss)
         rep_loss = arg.kappa * sum(rep_loss_terms)
-        smooth_weighted = arg.omega_smooth * smooth_loss
-        ret_loss = arg.lam * gen_loss + base_loss + smooth_weighted
+        ret_loss = arg.lam * gen_loss + base_loss
 
         freeze_all()
         for para in module.weights_dec.parameters():
@@ -784,8 +893,11 @@ def train(
         epoch_rep_lh.update(float(rep_loss_lh.item()))
         epoch_rep_rh.update(float(rep_loss_rh.item()))
         epoch_rep_tail_hind.update(float(rep_loss_tail_hind.item()))
-        epoch_smooth.update(float(smooth_loss.item()))
-        epoch_smooth_weighted.update(float(smooth_weighted.item()))
+        epoch_rep_tail_lift.update(float(rep_loss_tail_lift.item()))
+        epoch_rep_tail_mid.update(float(rep_loss_tail_mid.item()))
+        epoch_rep_tail_fold.update(float(rep_loss_tail_fold.item()))
+        epoch_rep_tail_torso.update(float(rep_loss_tail_torso.item()))
+        epoch_rep_tail_taper.update(float(rep_loss_tail_taper.item()))
         if compute_att:
             epoch_att.update(float(att_loss.item()))
 
@@ -793,8 +905,12 @@ def train(
             loss_r=float(ret_loss.item()),
             loss_sp=float(rep_loss.item()),
             tail_hind=float(rep_loss_tail_hind.item()),
+            tail_lift=float(rep_loss_tail_lift.item()),
+            tail_mid=float(rep_loss_tail_mid.item()),
+            tail_fold=float(rep_loss_tail_fold.item()),
+            tail_torso=float(rep_loss_tail_torso.item()),
+            tail_taper=float(rep_loss_tail_taper.item()),
             lh=float(rep_loss_lh.item()),
-            smooth=float(smooth_loss.item()),
             time=end_time - start_time,
         )
         pbar.update(1)
@@ -808,8 +924,11 @@ def train(
         "rep_lh": epoch_rep_lh,
         "rep_rh": epoch_rep_rh,
         "rep_tail_hind": epoch_rep_tail_hind,
-        "smooth": epoch_smooth,
-        "smooth_weighted": epoch_smooth_weighted,
+        "rep_tail_lift": epoch_rep_tail_lift,
+        "rep_tail_mid": epoch_rep_tail_mid,
+        "rep_tail_fold": epoch_rep_tail_fold,
+        "rep_tail_torso": epoch_rep_tail_torso,
+        "rep_tail_taper": epoch_rep_tail_taper,
         "epoch_time": epoch_time,
     }
     compute_front = arg.enable_front_rdf and not arg.disable_front_rdf
@@ -829,8 +948,11 @@ def train(
         logger.add_scalar("train_rep_lh", reduced["rep_lh"], epoch)
         logger.add_scalar("train_rep_rh", reduced["rep_rh"], epoch)
         logger.add_scalar("train_rep_tail_hind", reduced["rep_tail_hind"], epoch)
-        logger.add_scalar("train_smooth", reduced["smooth"], epoch)
-        logger.add_scalar("train_smooth_weighted", reduced["smooth_weighted"], epoch)
+        logger.add_scalar("train_rep_tail_lift", reduced["rep_tail_lift"], epoch)
+        logger.add_scalar("train_rep_tail_mid", reduced["rep_tail_mid"], epoch)
+        logger.add_scalar("train_rep_tail_fold", reduced["rep_tail_fold"], epoch)
+        logger.add_scalar("train_rep_tail_torso", reduced["rep_tail_torso"], epoch)
+        logger.add_scalar("train_rep_tail_taper", reduced["rep_tail_taper"], epoch)
         if compute_front:
             logger.add_scalar("train_rep_lf", reduced["rep_lf"], epoch)
             logger.add_scalar("train_rep_rf", reduced["rep_rf"], epoch)
@@ -870,7 +992,12 @@ def main(arg):
     print_log_txt(
         f"RDF weights front={arg.w_front if compute_front else 0}(off) "
         f"hind={arg.w_hind} tail_hind={arg.w_tail_hind} "
-        f"omega_smooth={arg.omega_smooth}",
+        f"tail_lift={arg.w_tail_lift} tail_mid={arg.w_tail_mid} "
+        f"tail_fold={arg.w_tail_fold} "
+        f"tail_torso={arg.w_tail_torso if (arg.enable_tail_torso_rdf and not arg.disable_tail_torso_rdf) else 0}"
+        f"({'on' if (arg.enable_tail_torso_rdf and not arg.disable_tail_torso_rdf) else 'off'}) "
+        f"tail_taper={arg.w_tail_taper} "
+        f"tail_dof_num={arg.ret_model_args.get('tail_dof_num', 'default')}",
         arg.work_dir,
         arg,
     )
@@ -931,7 +1058,7 @@ def main(arg):
         params, lr=arg.base_lr, weight_decay=arg.weight_decay, betas=(0.5, 0.999)
     )
     scheduler_ret = torch.optim.lr_scheduler.MultiStepLR(
-        optimizer_ret, milestones=arg.step, gamma=0.1, last_epoch=-1
+        optimizer_ret, milestones=arg.step, gamma=arg.lr_gamma, last_epoch=-1
     )
 
     train_writer = None
@@ -1005,8 +1132,11 @@ def main(arg):
             f"rep_lh:{epoch_stats['rep_lh']:.4f}  "
             f"rep_rh:{epoch_stats['rep_rh']:.4f}  "
             f"rep_tail_hind:{epoch_stats['rep_tail_hind']:.4f}  "
-            f"smooth:{epoch_stats['smooth']:.6f}  "
-            f"smooth_w:{epoch_stats['smooth_weighted']:.6f}  "
+            f"rep_tail_lift:{epoch_stats['rep_tail_lift']:.4f}  "
+            f"rep_tail_mid:{epoch_stats['rep_tail_mid']:.4f}  "
+            f"rep_tail_fold:{epoch_stats['rep_tail_fold']:.4f}  "
+            f"rep_tail_torso:{epoch_stats['rep_tail_torso']:.4f}  "
+            f"rep_tail_taper:{epoch_stats['rep_tail_taper']:.4f}  "
             f"epoch time:{epoch_stats['epoch_time']:.4f}  lr:{lr:.6g}"
         )
         print_log_txt(log_txt, arg.work_dir, arg)

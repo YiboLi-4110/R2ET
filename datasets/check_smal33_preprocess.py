@@ -376,6 +376,7 @@ def check_one(
     axis_transform="none",
     forward_mode="across",
     roundtrip=False,
+    post_axis_yaw_deg=0.0,
 ):
     seq, quat, skel = load_triplet(seq_path)
     local_dim = 33 * 3
@@ -523,6 +524,7 @@ def check_one(
                         str(bvh_path),
                         axis_transform=axis_transform,
                         forward_mode=forward_mode,
+                        post_axis_yaw_deg=post_axis_yaw_deg,
                     )
                     if motion is None:
                         result["warnings"].append(
@@ -532,8 +534,10 @@ def check_one(
                         result["preprocess_params"] = {
                             "axis_transform": axis_transform,
                             "forward_mode": forward_mode,
+                            "post_axis_yaw_deg": post_axis_yaw_deg,
                             "_axis_transform": motion.get("_axis_transform"),
                             "_forward_mode": motion.get("_forward_mode"),
+                            "_post_axis_yaw_deg": motion.get("_post_axis_yaw_deg"),
                         }
                         result["roundtrip_diff"] = compare_roundtrip(
                             seq, quat, skel, motion
@@ -745,6 +749,15 @@ def main():
         ),
     )
     parser.add_argument(
+        "--post_axis_yaw_deg",
+        type=float,
+        default=0.0,
+        help=(
+            "Must match preprocess_q_smal33.py --post_axis_yaw_deg used to build npy "
+            "(e.g. 90 for ARP cat_actions / batch2_dogs). Default 0."
+        ),
+    )
+    parser.add_argument(
         "--roundtrip",
         action="store_true",
         help=(
@@ -771,6 +784,7 @@ def main():
             axis_transform=args.axis_transform,
             forward_mode=args.forward_mode,
             roundtrip=args.roundtrip,
+            post_axis_yaw_deg=args.post_axis_yaw_deg,
         )
         for path in seq_paths
     ]

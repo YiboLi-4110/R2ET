@@ -487,6 +487,13 @@ def motion_parse_options(load_data, prefix):
             f"{prefix}_forward_mode",
             load_data.get("forward_mode", "across"),
         ),
+        "post_axis_yaw_deg": float(
+            load_data.get(
+                f"{prefix}_post_axis_yaw_deg",
+                load_data.get("post_axis_yaw_deg", 0.0),
+            )
+            or 0.0
+        ),
     }
 
 

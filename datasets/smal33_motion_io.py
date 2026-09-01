@@ -118,6 +118,54 @@ def apply_axis_transform_anim(anim, axis_transform=None):
     return anim
 
 
+def yaw_rotation_matrix_degrees(yaw_deg):
+    """Right-handed rotation matrix about +Y (degrees)."""
+    angle = np.deg2rad(float(yaw_deg))
+    c, s = np.cos(angle), np.sin(angle)
+    return np.array(
+        [
+            [c, 0.0, s],
+            [0.0, 1.0, 0.0],
+            [-s, 0.0, c],
+        ],
+        dtype=np.float64,
+    )
+
+
+def yaw_quaternion_degrees(yaw_deg):
+    """Unit quaternion for a right-handed yaw about +Y (degrees)."""
+    angle = np.deg2rad(float(yaw_deg))
+    qs = np.array(
+        [np.cos(angle / 2.0), 0.0, np.sin(angle / 2.0), 0.0],
+        dtype=np.float64,
+    )
+    return Quaternions(qs.reshape(1, 1, 4))
+
+
+def apply_world_yaw_anim(anim, yaw_deg):
+    """
+    Apply a world yaw about +Y as a full basis change (same style as axis_transform).
+
+    Rotates positions/offsets and conjugates local rotations/orients so that a
+    clip which faces -X after ``shepherd_y_z_x`` can be aligned to +Z while
+    keeping root local quaternions near identity (dog_actions convention).
+
+    Default yaw_deg=0 is a no-op (preserves existing pipelines).
+    """
+    if yaw_deg is None or abs(float(yaw_deg)) < 1e-8:
+        return anim
+    matrix = yaw_rotation_matrix_degrees(yaw_deg)
+    anim.positions = np.einsum("ij,...j->...i", matrix, np.asarray(anim.positions))
+    anim.offsets = np.einsum("ij,...j->...i", matrix, np.asarray(anim.offsets))
+    rotations = Quaternions(anim.rotations.qs).transforms()
+    transformed = np.einsum("ij,...jk,lk->...il", matrix, rotations, matrix)
+    anim.rotations.qs = Quaternions.from_transforms(transformed).normalized().qs
+    orients = Quaternions(anim.orients.qs).transforms()
+    transformed_o = np.einsum("ij,...jk,lk->...il", matrix, orients, matrix)
+    anim.orients.qs = Quaternions.from_transforms(transformed_o).normalized().qs
+    return anim
+
+
 def softmax(x, **kw):
     softness = kw.pop("softness", 1.0)
     maxi, mini = np.max(x, **kw), np.min(x, **kw)
@@ -138,16 +186,21 @@ def get_skel(joints, parents):
     return np.stack(c_offsets, axis=0)
 
 
-def estimate_forward(positions, mode="across"):
-    if mode == "across":
+def estimate_forward(positions, mode="across", landmarks=None):
+    if landmarks is None:
         sdr_l, sdr_r, hip_l, hip_r = 9, 13, 19, 23
+    else:
+        sdr_l = int(landmarks["sdr_l"])
+        sdr_r = int(landmarks["sdr_r"])
+        hip_l = int(landmarks["hip_l"])
+        hip_r = int(landmarks["hip_r"])
+    if mode == "across":
         across1 = positions[:, hip_l] - positions[:, hip_r]
         across0 = positions[:, sdr_l] - positions[:, sdr_r]
         across = across0 + across1
         across = across / np.sqrt((across**2).sum(axis=-1))[..., np.newaxis]
         return np.cross(across, np.array([[0, 1, 0]]))
     if mode == "body":
-        sdr_l, sdr_r, hip_l, hip_r = 9, 13, 19, 23
         shoulder = 0.5 * (positions[:, sdr_l] + positions[:, sdr_r])
         hip = 0.5 * (positions[:, hip_l] + positions[:, hip_r])
         forward = shoulder - hip
@@ -156,8 +209,23 @@ def estimate_forward(positions, mode="across"):
     raise ValueError(f"Unknown forward mode '{mode}'. Expected 'across' or 'body'.")
 
 
-def process_positions(positions, forward_mode="across"):
-    fid_l, fid_r = np.array([10, 21]), np.array([14, 25])
+def process_positions(positions, forward_mode="across", landmarks=None):
+    if landmarks is None:
+        fid_l, fid_r = np.array([10, 21]), np.array([14, 25])
+        forward_landmarks = None
+        contact_fid_l, contact_fid_r = fid_l, fid_r
+    else:
+        fid_l = np.asarray(landmarks["foot_l"], dtype=np.int64)
+        fid_r = np.asarray(landmarks["foot_r"], dtype=np.int64)
+        # Dummy root is inserted at index 0 below; shift facing landmarks.
+        forward_landmarks = {
+            "sdr_l": int(landmarks["sdr_l"]) + 1,
+            "sdr_r": int(landmarks["sdr_r"]) + 1,
+            "hip_l": int(landmarks["hip_l"]) + 1,
+            "hip_r": int(landmarks["hip_r"]) + 1,
+        }
+        contact_fid_l = fid_l + 1
+        contact_fid_r = fid_r + 1
     foot_heights = np.minimum(positions[:, fid_l, 1], positions[:, fid_r, 1]).min(axis=1)
     floor_height = softmin(foot_heights, softness=0.5, axis=0)
     positions = positions.copy()
@@ -167,18 +235,18 @@ def process_positions(positions, forward_mode="across"):
     positions = np.concatenate([reference[:, np.newaxis], positions], axis=1)
 
     velfactor, heightfactor = np.array([0.15, 0.15]), np.array([9.0, 6.0])
-    feet_l_x = (positions[1:, fid_l, 0] - positions[:-1, fid_l, 0]) ** 2
-    feet_l_y = (positions[1:, fid_l, 1] - positions[:-1, fid_l, 1]) ** 2
-    feet_l_z = (positions[1:, fid_l, 2] - positions[:-1, fid_l, 2]) ** 2
-    feet_l_h = positions[:-1, fid_l, 1]
+    feet_l_x = (positions[1:, contact_fid_l, 0] - positions[:-1, contact_fid_l, 0]) ** 2
+    feet_l_y = (positions[1:, contact_fid_l, 1] - positions[:-1, contact_fid_l, 1]) ** 2
+    feet_l_z = (positions[1:, contact_fid_l, 2] - positions[:-1, contact_fid_l, 2]) ** 2
+    feet_l_h = positions[:-1, contact_fid_l, 1]
     feet_l = (
         ((feet_l_x + feet_l_y + feet_l_z) < velfactor) & (feet_l_h < heightfactor)
     ).astype(np.float32)
 
-    feet_r_x = (positions[1:, fid_r, 0] - positions[:-1, fid_r, 0]) ** 2
-    feet_r_y = (positions[1:, fid_r, 1] - positions[:-1, fid_r, 1]) ** 2
-    feet_r_z = (positions[1:, fid_r, 2] - positions[:-1, fid_r, 2]) ** 2
-    feet_r_h = positions[:-1, fid_r, 1]
+    feet_r_x = (positions[1:, contact_fid_r, 0] - positions[:-1, contact_fid_r, 0]) ** 2
+    feet_r_y = (positions[1:, contact_fid_r, 1] - positions[:-1, contact_fid_r, 1]) ** 2
+    feet_r_z = (positions[1:, contact_fid_r, 2] - positions[:-1, contact_fid_r, 2]) ** 2
+    feet_r_h = positions[:-1, contact_fid_r, 1]
     feet_r = (
         ((feet_r_x + feet_r_y + feet_r_z) < velfactor) & (feet_r_h < heightfactor)
     ).astype(np.float32)
@@ -190,7 +258,9 @@ def process_positions(positions, forward_mode="across"):
     )
     positions[:, :, 2] = positions[:, :, 2] - positions[:, :1, 2]
 
-    forward = estimate_forward(positions, mode=forward_mode)
+    forward = estimate_forward(
+        positions, mode=forward_mode, landmarks=forward_landmarks
+    )
     forward = filters.gaussian_filter1d(forward, 20, axis=0, mode="nearest")
     forward = forward / np.sqrt((forward**2).sum(axis=-1))[..., np.newaxis]
 
@@ -242,17 +312,82 @@ def get_inp_from_bvh(
     forward_mode="across",
     canonicalize_bind_pose=True,
     bind_pose_dot_threshold=0.9,
+    post_axis_yaw_deg=0.0,
+    keep_joint_names=None,
+    skeleton_mode="auto",
 ):
+    """
+    Load a BVH into the training/inference motion dict.
+
+    Default ``skeleton_mode='auto'`` keeps the historical SMAL33 remap when the
+    file (or ``keep_joint_names``) looks like SMAL33. Otherwise all joints are
+    kept, or subset/reordered to ``keep_joint_names`` (shape.npz order).
+
+    ``post_axis_yaw_deg`` (default 0) applies an optional world yaw about +Y
+    *after* ``axis_transform`` and *before* facing canonicalization, as a full
+    basis change (positions/offsets/quats). Use +90 for ARP-exported
+    cat_actions / batch2_dogs so they face +Z with near-identity root quats
+    like dog_actions. Leave 0 for dog_actions / smal@shepherd.
+    """
+    try:
+        from .skeleton_io import (
+            is_smal33_names,
+            parse_bvh_hierarchy_names,
+            remap_anim_to_names,
+            resolve_landmark_indices,
+        )
+    except ImportError:
+        from skeleton_io import (
+            is_smal33_names,
+            parse_bvh_hierarchy_names,
+            remap_anim_to_names,
+            resolve_landmark_indices,
+        )
+
     anim, names, ftime = BVH.load(str(bvh_path))
-    joint_names = parse_bvh_joint_names(bvh_path)
-    anim, to_keep = remap_bvh_anim(anim, joint_names)
+    joint_names_no_root = parse_bvh_joint_names(bvh_path)
+    hierarchy_names = parse_bvh_hierarchy_names(bvh_path)
+    if len(hierarchy_names) == len(anim.parents):
+        file_names = hierarchy_names
+    else:
+        file_names = [str(n) for n in names]
+        if len(file_names) != len(anim.parents):
+            raise RuntimeError(
+                f"BVH joint count mismatch in {bvh_path}: "
+                f"anim={len(anim.parents)} load_names={len(file_names)} "
+                f"hierarchy={len(hierarchy_names)}"
+            )
+
+    keep_names = None
+    if keep_joint_names is not None:
+        keep_names = [str(n) for n in keep_joint_names]
+
+    mode = str(skeleton_mode or "auto").strip().lower()
+    if mode == "auto":
+        probe = keep_names if keep_names else file_names
+        mode = "smal33" if is_smal33_names(probe) else "generic"
+    if mode not in ("smal33", "generic"):
+        raise ValueError(f"Unknown skeleton_mode {skeleton_mode!r}")
+
+    process_landmarks = None
+    if mode == "smal33":
+        anim, to_keep = remap_bvh_anim(anim, joint_names_no_root)
+        kept_joint_names = ["Root"] + list(JOINTS_LIST)
+    else:
+        kept_joint_names = keep_names if keep_names else list(file_names)
+        anim, to_keep = remap_anim_to_names(anim, file_names, kept_joint_names)
+        process_landmarks = resolve_landmark_indices(kept_joint_names)
+
     if anim.positions.shape[0] <= 1:
         return None
     anim = apply_axis_transform_anim(anim, axis_transform)
+    anim = apply_world_yaw_anim(anim, post_axis_yaw_deg)
 
     joints = Animation.positions_global(anim)
     joints = np.concatenate([joints, joints[-1:]], axis=0)
-    new_joints, rotation = process_positions(joints, forward_mode=forward_mode)
+    new_joints, rotation = process_positions(
+        joints, forward_mode=forward_mode, landmarks=process_landmarks
+    )
     new_joints = new_joints[:, 3:]
     rotation = rotation[:-1]
     anim.rotations[:, 0, :] = rotation[:, 0, :] * anim.rotations[:, 0, :]
@@ -269,10 +404,14 @@ def get_inp_from_bvh(
         "skel": skel,
         "anim": anim,
         "names": names,
+        "joint_names": kept_joint_names,
+        "parents": np.asarray(anim.parents, dtype=np.int64),
         "ftime": ftime,
         "to_keep": to_keep,
         "_axis_transform": axis_transform,
         "_forward_mode": forward_mode,
+        "_post_axis_yaw_deg": float(post_axis_yaw_deg or 0.0),
+        "_skeleton_mode": mode,
     }
     if canonicalize_bind_pose:
         try:
@@ -339,17 +478,151 @@ def load_shape_for_character(shape_path=None, character=None, npz_path=None):
     return load_shape_vector(path)
 
 
-def load_mesh_from_npz(npz_path):
-    """Load rest mesh assets for LBS visualization from a shape .npz file."""
+def load_mesh_from_npz(
+    npz_path,
+    *,
+    canonicalize_bind_pose=True,
+    forward_mode="body",
+    bind_pose_dot_threshold=0.9,
+):
+    """Load rest mesh assets for LBS visualization from a shape .npz file.
+
+    When ``canonicalize_bind_pose`` is True (default), apply the same +Z bind-pose
+    yaw used by ``get_inp_from_bvh`` so mesh vertices and ``skeleton`` stay in the
+    motion/LBS frame. LBS must use this mesh ``skeleton`` as rest bind — not the
+    BVH rest skel alone — otherwise a facing mismatch causes stretch ("拉皮").
+    """
     path = resolve_shape_npz_path(npz_path=npz_path)
-    data = np.load(str(path))
+    data = np.load(str(path), allow_pickle=True)
+    vertices = np.asarray(data["rest_vertices"], dtype=np.float32)
+    faces = np.asarray(data["rest_faces"], dtype=np.int32)
+    skin_weights = np.asarray(data["skinning_weights"], dtype=np.float32)
+    skeleton = (
+        np.asarray(data["skeleton"], dtype=np.float32)
+        if "skeleton" in data.files
+        else None
+    )
+    try:
+        from .skeleton_io import decode_name_list
+    except ImportError:
+        from skeleton_io import decode_name_list
+
+    joint_names = (
+        decode_name_list(data["joint_names"]) if "joint_names" in data.files else None
+    )
+    topology = None
+    if "topology" in data.files:
+        topology = np.asarray(data["topology"], dtype=np.int64)
+    elif "parents" in data.files:
+        topology = np.asarray(data["parents"], dtype=np.int64)
+    applied = False
+
+    if canonicalize_bind_pose and skeleton is not None:
+        try:
+            from .bind_pose_canonicalize_smal33 import canonicalize_shape_npz_arrays
+        except ImportError:
+            from bind_pose_canonicalize_smal33 import canonicalize_shape_npz_arrays
+
+        payload = {
+            "skeleton": skeleton,
+            "rest_vertices": vertices,
+            "rest_faces": faces,
+            "skinning_weights": skin_weights,
+        }
+        if joint_names is not None:
+            payload["joint_names"] = np.asarray(joint_names)
+        if topology is not None:
+            payload["topology"] = topology
+        for key in (
+            "vertex_part",
+            "rest_body_vertices",
+            "rest_arm_vertices",
+            "full_width",
+            "body_width",
+            "joint_shape",
+        ):
+            if key in data.files:
+                payload[key] = np.asarray(data[key])
+        payload, applied = canonicalize_shape_npz_arrays(
+            payload,
+            forward_mode=forward_mode,
+            dot_threshold=float(bind_pose_dot_threshold),
+        )
+        vertices = np.asarray(payload["rest_vertices"], dtype=np.float32)
+        skeleton = np.asarray(payload["skeleton"], dtype=np.float32)
+
     return {
-        "vertices": np.asarray(data["rest_vertices"], dtype=np.float32),
-        "faces": np.asarray(data["rest_faces"], dtype=np.int32),
-        "skin_weights": np.asarray(data["skinning_weights"], dtype=np.float32),
+        "vertices": vertices,
+        "faces": faces,
+        "skin_weights": skin_weights,
+        "skeleton": skeleton,
+        "joint_names": joint_names,
+        "topology": topology,
+        "parents": topology,
+        "bind_pose_canonicalized": bool(applied),
         "npz_path": str(path),
         "character": path.stem,
     }
+
+
+def lbs_rest_skel_from_mesh(mesh_data, fallback_skel=None):
+    """Prefer shape.npz skeleton (same frame as mesh vertices) for LBS rest bind."""
+    skel = mesh_data.get("skeleton") if mesh_data is not None else None
+    if skel is not None:
+        return np.asarray(skel, dtype=np.float32)
+    if fallback_skel is None:
+        raise ValueError(
+            "Mesh has no skeleton and no fallback_skel was provided for LBS."
+        )
+    return np.asarray(fallback_skel, dtype=np.float32)
+
+
+def report_lbs_rest_skel_mismatch(
+    mesh_skel,
+    motion_skel,
+    *,
+    label="",
+    warn_mean_threshold=0.05,
+    mesh_canonicalized=None,
+):
+    """Log when BVH rest skel diverges from mesh bind (non-root offsets)."""
+    if mesh_skel is None or motion_skel is None:
+        return None
+    mesh = np.asarray(mesh_skel, dtype=np.float64).reshape(-1, 3)
+    motion = np.asarray(motion_skel, dtype=np.float64).reshape(-1, 3)
+    if mesh.shape != motion.shape:
+        print(
+            f"[lbs-bind][{label}] shape mismatch mesh={mesh.shape} motion={motion.shape}"
+        )
+        return None
+    dist = np.linalg.norm(mesh - motion, axis=-1)
+    non_root = dist[1:] if len(dist) > 1 else dist
+    stats = {
+        "root_dist": float(dist[0]) if len(dist) else 0.0,
+        "non_root_mean": float(non_root.mean()) if len(non_root) else 0.0,
+        "non_root_max": float(non_root.max()) if len(non_root) else 0.0,
+        "argmax": int(np.argmax(dist)) if len(dist) else -1,
+    }
+    prefix = f"[lbs-bind][{label}]" if label else "[lbs-bind]"
+    canon_txt = (
+        f", mesh_canonicalized={bool(mesh_canonicalized)}"
+        if mesh_canonicalized is not None
+        else ""
+    )
+    if stats["non_root_mean"] > float(warn_mean_threshold):
+        print(
+            f"{prefix} mesh/motion rest skel diverge "
+            f"(non-root mean={stats['non_root_mean']:.4f}, "
+            f"max={stats['non_root_max']:.4f} at joint {stats['argmax']}{canon_txt}). "
+            "Using mesh skeleton for LBS."
+        )
+    else:
+        print(
+            f"{prefix} rest skel ok "
+            f"(non-root mean={stats['non_root_mean']:.4f}, "
+            f"root_dist={stats['root_dist']:.4f}{canon_txt})"
+        )
+    return stats
 
 
 def load_mesh_for_character(shape_path=None, character=None, npz_path=None):
@@ -438,9 +711,15 @@ def build_model_inputs(motion, stats, shape_vec, device):
 
 
 def load_retnet(weights_path, ret_model_args, device):
+    import inspect as _inspect
+
     from src.model_skeleton_aware_smal33 import RetNet
 
-    model = RetNet(**ret_model_args).to(device)
+    # Shape configs may share ret_model_args with stage-1 loading and include
+    # shape-only keys (e.g. tail_dof_num) the skeleton RetNet does not accept.
+    accepted = set(_inspect.signature(RetNet.__init__).parameters)
+    skeleton_args = {k: v for k, v in ret_model_args.items() if k in accepted}
+    model = RetNet(**skeleton_args).to(device)
     weights = torch.load(str(weights_path), map_location=device)
     cleaned = OrderedDict()
     for key, val in weights.items():
@@ -579,6 +858,20 @@ def rest_skel_to_world(skel_frame0, parents, start_rots=None):
     return world[0, 0].astype(np.float32)
 
 
+def apply_inverse_axis_transform_points(points, axis_transform=None):
+    matrix = np.linalg.inv(axis_transform_matrix(axis_transform))
+    return np.einsum("ij,...j->...i", matrix, points)
+
+
+def apply_inverse_axis_transform_quats(quats, axis_transform=None):
+    matrix = np.linalg.inv(axis_transform_matrix(axis_transform))
+    if np.allclose(matrix, np.eye(3)):
+        return quats.copy()
+    rotations = Quaternions(quats).transforms()
+    transformed = np.einsum("ij,...jk,lk->...il", matrix, rotations, matrix)
+    return Quaternions.from_transforms(transformed).normalized().qs
+
+
 def retarget_to_bvh(
     inp_motion,
     tgt_motion,
@@ -657,6 +950,87 @@ def retarget_to_bvh(
     tgt_anim.rotations.qs[:, tgt_to_keep] = cquat
     BVH.save(str(out_copy), tgt_anim, tgt_names, tgt_ftime)
     return inp_copy, tgt_copy, out_copy
+
+
+def retarget_to_native_bvh(
+    inp_motion,
+    tgt_motion,
+    local_rt,
+    global_rt,
+    quat_rt,
+    stats,
+    save_dir,
+    pair_tag,
+    tgt_bvh_path,
+    axis_transform,
+    local_is_normalized=True,
+):
+    """
+    Write retarget animation onto the RAW (FBX-native) target BVH rest pose.
+
+    Inference runs in ``axis_transform`` space (e.g. shepherd_y_z_x). This writer
+    inverse-transforms local quaternions / root translation back to the native
+    BVH frame and keeps the on-disk target offsets untouched so Blender can bind
+    the result to the textured FBX armature.
+    """
+    from src.utils import put_in_world_bvh
+
+    if tgt_bvh_path is None:
+        raise ValueError("tgt_bvh_path is required for native BVH export")
+
+    save_dir = Path(save_dir)
+    save_dir.mkdir(parents=True, exist_ok=True)
+
+    local_mean = stats["local_mean"]
+    local_std = stats["local_std"]
+    if local_is_normalized:
+        ours_l = local_rt * local_std + local_mean
+    else:
+        ours_l = np.asarray(local_rt, dtype=np.float32)
+    ours_g = np.asarray(global_rt, dtype=np.float32)
+    ours_total = np.concatenate([ours_l.reshape(len(local_rt), -1), ours_g], axis=-1)
+    num_frames = len(ours_total)
+
+    tgt_to_keep = tgt_motion["to_keep"]
+    # Always load the on-disk target BVH: this is the FBX-native rest hierarchy.
+    native_anim, native_names, native_ftime = BVH.load(str(tgt_bvh_path))
+    native_rest = native_anim.copy()
+    native_anim = expand_anim_frames(native_anim, num_frames)
+
+    # Model-space root + local quat (same bookkeeping as retarget_to_bvh).
+    start_rots = identity_start_rots(num_frames)
+
+    output_bvh = ours_total.copy()
+    output_bvh[:, -4:] = output_bvh[:, -4:] * (
+        np.sign(inp_motion["seq"][:, -8:-4]) * np.sign(output_bvh[:, -4:])
+    )
+    output_bvh[:, -3][np.abs(inp_motion["seq"][:, -8:-4][:, 2]) <= 1e-2] = 0.0
+    # Use model-space target root rest for put_in_world consistency.
+    model_root_rest = tgt_motion["anim"].positions[:1, 0, :].copy()
+    output_bvh[:, :3] = model_root_rest
+
+    wjs, rots = put_in_world_bvh(output_bvh.copy(), start_rots)
+    root_model = wjs[0, :, 0].copy()  # (T, 3) model space
+    cquat_model = quat_rt[:, :NUM_JOINTS].copy()
+    cquat_model[:, 0:1, :] = (rots * Quaternions(cquat_model[:, 0:1, :])).qs
+
+    # Inverse axis transform -> FBX / raw BVH coordinates.
+    cquat_native = apply_inverse_axis_transform_quats(cquat_model, axis_transform)
+    root_native = apply_inverse_axis_transform_points(root_model, axis_transform)
+
+    # Keep native bone offsets; only replace motion channels on remapped joints.
+    native_anim.rotations.qs[:, tgt_to_keep] = cquat_native.astype(np.float32)
+    # Root translation in native space; other joint positions stay as rest offsets.
+    native_anim.positions[:, 0, :] = root_native.astype(np.float32)
+    for j_idx in tgt_to_keep[1:]:
+        # Preserve rest local offsets as constant joint positions for non-root.
+        native_anim.positions[:, j_idx, :] = native_rest.offsets[j_idx][None, :]
+
+    out_copy = save_dir / f"{pair_tag}_native_retarget.bvh"
+    rest_copy = save_dir / f"{pair_tag}_native_target_rest.bvh"
+    BVH.save(str(rest_copy), native_rest, native_names, native_ftime)
+    BVH.save(str(out_copy), native_anim, native_names, native_ftime)
+    return rest_copy, out_copy
 
 
 def world_joints_from_motion(local_rt, global_rt, stats, start_rots=None):

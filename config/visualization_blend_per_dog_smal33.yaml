@@ -1,0 +1,164 @@
+# One target dog -> one .blend containing ALL shepherd train_char actions.
+# Default pack_mode=armature: bake Ours onto the target FBX armature (editable).
+# Entry: visualization/batch_r2et_dog_blend.py
+#
+# retarget_mode:
+#   r2et   -> R2ET stage1/stage2/blend (needs model weights)
+#   direct -> CopyQuat same-skeleton (fourway-compatible; no RetNet)
+#   arp    -> Auto-Rig Pro in Blender (cross-skeleton; needs --blender + addon)
+
+output_root: ./visualization/blend_retarget_results/_work
+blend_output_dir: ./visualization/blend_retarget_results
+device: 0
+
+# r2et | direct (CopyQuat) | arp (Auto-Rig Pro). CLI: --retarget_mode
+retarget_mode: direct
+
+source:
+  train_char: ./datasets/shepherd/smal@shepherd/train_char
+  train_shape: ./datasets/shepherd/smal@shepherd/train_shape
+  prefer_bvh: true
+  # Skip source BVH clips shorter than this (inclusive threshold). 0 = keep all.
+  # Only used in scan mode (when `actions` below is empty / omitted).
+  min_frames: 16
+  # Explicit source clips (optional). When non-empty, ONLY these are used and
+  # train_char scan + min_frames are ignored. Each entry may be:
+  #   - path relative to train_char: Attack/Attack_down_IP.bvh
+  #   - path relative to repo / absolute path
+  #   - Folder/stem or unique stem under train_char
+  # CLI override: --actions ...
+  # actions:
+  #   - CrouchIdle/CrouchIdle_loop_2_RM.bvh
+  #   - Attack/Attack_down_IP.bvh
+  #   - Sit_loop_1_RM
+  actions: 
+    - shepherd@Attack/shepherd@Attack_J_smal_dog-foot_on_ground.bvh
+    - shepherd@Attack/shepherd@Attack_L_smal_dog-foot_on_ground.bvh
+    - shepherd@Bark/shepherd@Bark_smal_dog-foot_on_ground.bvh
+    - shepherd@Crouch/shepherd@Crouch_B_RM_smal_dog-foot_on_ground.bvh
+    - shepherd@Crouch/shepherd@Crouch_BL_RM_smal_dog-foot_on_ground.bvh
+    - shepherd@Crouch/shepherd@Crouch_BR_RM_smal_dog-foot_on_ground.bvh
+    - shepherd@Crouch/shepherd@Crouch_F_RM_smal_dog-foot_on_ground.bvh
+    - shepherd@Crouch/shepherd@Crouch_Idle_loop_2_smal_dog-foot_on_ground.bvh
+    - shepherd@Crouch/shepherd@Crouch_R_RM_smal_dog-foot_on_ground.bvh
+    - shepherd@Crouch/shepherd@Crouch_L_RM_smal_dog-foot_on_ground.bvh
+    - shepherd@Digging/shepherd@Digging_loop_smal_dog-foot_on_ground.bvh
+    - shepherd@Drink/shepherd@Drink_loop_smal_dog-foot_on_ground.bvh
+    - shepherd@Eat/shepherd@Eat_loop_smal_dog-foot_on_ground.bvh
+    - shepherd@Eat/shepherd@Eat_tear_smal_dog-foot_on_ground.bvh
+    - shepherd@Hit/shepherd@Hit_F_smal_dog-foot_on_ground.bvh
+    - shepherd@Hit/shepherd@Hit_M_smal_dog-foot_on_ground.bvh
+    - shepherd@Idle/shepherd@Idle_3_smal_dog-foot_on_ground.bvh
+    - shepherd@Idle/shepherd@Idle_4_smal_dog-foot_on_ground.bvh
+    - shepherd@Idle/shepherd@Idle_7_smal_dog-foot_on_ground.bvh
+    - shepherd@Jump/shepherd@Jump_Place_RM_smal_dog-foot_on_ground.bvh
+    - shepherd@Jump/shepherd@Jump_Run_RM_smal_dog-foot_on_ground.bvh
+    - shepherd@Pick/shepherd@Pick_up_smal_dog-foot_on_ground.bvh
+    - shepherd@Run/shepherd@Run_F_RM_smal_dog-foot_on_ground.bvh
+    - shepherd@Run/shepherd@Run_L_RM_smal_dog-foot_on_ground.bvh
+    - shepherd@Run/shepherd@Run_R_RM_smal_dog-foot_on_ground.bvh
+    - shepherd@Swim/shepherd@Swim_B_RM_smal_dog-foot_on_ground.bvh
+    - shepherd@Swim/shepherd@Swim_BR_RM_smal_dog-foot_on_ground.bvh
+    - shepherd@Swim/shepherd@Swim_BL_RM_smal_dog-foot_on_ground.bvh
+    - shepherd@Swim/shepherd@Swim_F_RM_smal_dog-foot_on_ground.bvh
+    - shepherd@Swim/shepherd@Swim_L_RM_smal_dog-foot_on_ground.bvh
+    - shepherd@Swim/shepherd@Swim_R_RM_smal_dog-foot_on_ground.bvh
+    - shepherd@Turn/shepherd@Turn_R180_RM_smal_dog-foot_on_ground.bvh
+    - shepherd@Turn/shepherd@Turn_L180_RM_smal_dog-foot_on_ground.bvh
+
+targets:
+  # dog_id == previous CSV dog_id, e.g. 博美_3 / 边牧_4
+  dog_ids:
+    - bianmu_2_dog_forpkl
+    # - bianmu_3_dog_forpkl
+    # - bixiong_2_bixiong
+    # - bixiong_3_bixiong
+    # - bomei_1_bomei
+    # - bomei_3_bomei
+    # - chaiquan_1_chaiquan
+    # - chaiquan_4_chaiquan
+    # - hashiqi_1_hashiqi
+    # - hashiqi_3_hashiqi
+    # - jinmao_3_jinmao
+    # - jinmao_4_jinmao
+    # - keji_1_keji
+    # - keji_3_keji
+    # - labuladuo_3_labuladuo
+    # - labuladuo_4_labuladuo
+    # - taidi_3_taidi
+    # - taidi_4_taidi
+  
+  char_root: ./datasets/shepherd/batch3_dogs/batch3_dogs_char
+  shape_root: ./datasets/shepherd/batch3_dogs/batch3_dogs_shape
+
+blend:
+  # armature: keep FBX armature/mesh; bake from model-space fbx_bake.npz (same as LBS)
+  # lbs:      shape-key mesh only (fourway-video look, no armature)
+  # both:     armature + LBS overlay collections
+  # NOTE: do not re-import BVH onto the mesh (breaks rest axes / Spine6-Neck).
+  pack_mode: armature
+  layout: grid
+  spacing: 2.5
+  grid_cols: 10
+  hide_all_but_first: true
+  # Applied to FBX object roots in armature mode (degrees around Blender Z).
+  rot_z_deg: 0.0
+  fps: 18
+  compress: true
+  # Skip model-space BVH only (native BVH debug + model-space fbx_bake.npz still written).
+  skip_bvh_export: true
+  # LBS display knobs (used when pack_mode is lbs|both).
+  lbs_axis_transform: y_up_to_z_up
+  lbs_global_yaw_deg: 0.0
+  animation_mode: shapekeys
+
+# Inference still uses shepherd model coordinates.
+motion:
+  inp_axis_transform: shepherd_y_z_x
+  inp_forward_mode: body
+  tgt_axis_transform: shepherd_y_z_x
+  tgt_forward_mode: body
+
+ret_model_args:
+  num_joint: 33
+  token_channels: 64
+  hidden_channels_p: 256
+  embed_channels_p: 128
+  kp: 0.8
+  tail_dof_num: 1
+
+model:
+  # Used when stage2.mode == stage1 (pure skeleton-aware RetNet).
+  # stage1_weights: ./work_dir/train_shepherd_skeleton_aware_smal33_1/r2et_shepherd_skeleton_aware_smal33_ret-94.pt
+  stage1_weights: ./work_dir/train_smal@shepherd_batch3_dogs_skeleton_aware_smal33/r2et_shepherd_skeleton_aware_smal33_ret-118.pt
+  # Used when stage2.mode in {stage2, blend} (shape-aware RetNet).
+  stage2_weights: ./work_dir/train_smal@shepherd_batch3_dogs_shape_aware_smal33/r2et_shepherd_shape_aware_smal33_ret-95.pt
+  stats_path: ./datasets/shepherd/stats
+
+# Inference (retarget_mode=r2et only; ignored for direct/CopyQuat and arp):
+#   stage1 -> load model.stage1_weights (skeleton RetNet); gate_scale ignored
+#   stage2 -> load model.stage2_weights; force full gate, k=gate_scale
+#   blend  -> load model.stage2_weights; learned gate * gate_scale
+stage2:
+  mode: blend
+  gate_scale: 1.5
+
+# ARP path (retarget_mode=arp). Same knobs as batch_arp_sequence_smal33.
+# CLI: --blender / --arp_addon_modules
+assets:
+  recursive_fbx_search: false
+
+arp:
+  use_source_fbx: true
+  source_armature_hint: null
+  target_armature_hint: null
+  remap_preset_name: smal33_to_smal33
+  # Optional explicit .bmap (overrides remap_preset_name lookup).
+  # remap_preset_path: ./visualization/arp_presets/smal33_to_smal33.bmap
+  operator_sequence:
+    - auto_scale
+    - build_bones_list
+    - import_config_preset
+    - retarget
+  # Dog-blend pack keeps root travel; do not use world_root_h_locked_zup here.
+  mesh_export_space: blender_world_z_up

@@ -27,15 +27,72 @@ from Quaternions import Quaternions  # noqa: E402
 
 from smal33_motion_io import NUM_JOINTS, SMAL33_PARENTS  # noqa: E402
 
+try:
+    from skeleton_io import decode_name_list, is_smal33_names, resolve_landmark_indices
+except ImportError:
+    from datasets.skeleton_io import (
+        decode_name_list,
+        is_smal33_names,
+        resolve_landmark_indices,
+    )
+
 JOINT_LEFT_SCAPULA, JOINT_RIGHT_SCAPULA = 8, 12
 JOINT_LEFT_THIGH, JOINT_RIGHT_THIGH = 18, 22
 CANONICAL_FORWARD_XZ = np.array([0.0, 1.0], dtype=np.float64)
 
 
-def offsets_to_global(offsets: np.ndarray) -> np.ndarray:
+def _parents_for_skel(skel: np.ndarray, parents: np.ndarray | None) -> np.ndarray:
+    joint_count = int(np.asarray(skel).reshape(-1, 3).shape[0])
+    if parents is not None:
+        parents_np = np.asarray(parents, dtype=np.int64).reshape(-1)
+        if parents_np.shape[0] == joint_count:
+            return parents_np
+    if joint_count == NUM_JOINTS:
+        return np.asarray(SMAL33_PARENTS, dtype=np.int64)
+    raise ValueError(
+        f"bind-pose canonicalize needs parents for a {joint_count}-joint skeleton"
+    )
+
+
+def _landmarks_for_skel(
+    skel: np.ndarray,
+    joint_names: list[str] | None,
+) -> dict[str, int]:
+    joint_count = int(np.asarray(skel).reshape(-1, 3).shape[0])
+    names = decode_name_list(joint_names) if joint_names is not None else None
+    if names and not is_smal33_names(names):
+        resolved = resolve_landmark_indices(names)
+        return {
+            "sdr_l": int(resolved["sdr_l"]),
+            "sdr_r": int(resolved["sdr_r"]),
+            "hip_l": int(resolved["hip_l"]),
+            "hip_r": int(resolved["hip_r"]),
+        }
+    if joint_count == NUM_JOINTS:
+        return {
+            "sdr_l": JOINT_LEFT_SCAPULA,
+            "sdr_r": JOINT_RIGHT_SCAPULA,
+            "hip_l": JOINT_LEFT_THIGH,
+            "hip_r": JOINT_RIGHT_THIGH,
+        }
+    if names:
+        resolved = resolve_landmark_indices(names)
+        return {
+            "sdr_l": int(resolved["sdr_l"]),
+            "sdr_r": int(resolved["sdr_r"]),
+            "hip_l": int(resolved["hip_l"]),
+            "hip_r": int(resolved["hip_r"]),
+        }
+    raise ValueError(
+        f"Cannot resolve bind-pose landmarks for J={joint_count} without joint_names"
+    )
+
+
+def offsets_to_global(offsets: np.ndarray, parents: np.ndarray | None = None) -> np.ndarray:
     offsets = np.asarray(offsets, dtype=np.float64).reshape(-1, 3)
+    parents_np = _parents_for_skel(offsets, parents)
     out = np.zeros_like(offsets)
-    for idx, parent in enumerate(SMAL33_PARENTS):
+    for idx, parent in enumerate(parents_np):
         if parent == -1:
             out[idx] = offsets[idx]
         else:
@@ -43,17 +100,26 @@ def offsets_to_global(offsets: np.ndarray) -> np.ndarray:
     return out
 
 
-def bind_process_forward(skel_frame0: np.ndarray, forward_mode: str = "body") -> np.ndarray:
-    global_joints = offsets_to_global(skel_frame0)
-    across = (global_joints[JOINT_LEFT_THIGH] - global_joints[JOINT_RIGHT_THIGH]) + (
-        global_joints[JOINT_LEFT_SCAPULA] - global_joints[JOINT_RIGHT_SCAPULA]
+def bind_process_forward(
+    skel_frame0: np.ndarray,
+    forward_mode: str = "body",
+    *,
+    joint_names: list[str] | None = None,
+    parents: np.ndarray | None = None,
+) -> np.ndarray:
+    global_joints = offsets_to_global(skel_frame0, parents=parents)
+    marks = _landmarks_for_skel(skel_frame0, joint_names)
+    across = (global_joints[marks["hip_l"]] - global_joints[marks["hip_r"]]) + (
+        global_joints[marks["sdr_l"]] - global_joints[marks["sdr_r"]]
     )
     across = across / (np.linalg.norm(across) + 1e-8)
     forward = np.cross(across, np.array([0.0, 1.0, 0.0], dtype=np.float64))
     forward = forward / (np.linalg.norm(forward) + 1e-8)
     if forward_mode == "body":
-        shoulder = 0.5 * (global_joints[JOINT_LEFT_SCAPULA] + global_joints[JOINT_RIGHT_SCAPULA])
-        hip = 0.5 * (global_joints[JOINT_LEFT_THIGH] + global_joints[JOINT_RIGHT_THIGH])
+        shoulder = 0.5 * (
+            global_joints[marks["sdr_l"]] + global_joints[marks["sdr_r"]]
+        )
+        hip = 0.5 * (global_joints[marks["hip_l"]] + global_joints[marks["hip_r"]])
         body = shoulder - hip
         body[1] = 0.0
         norm = np.linalg.norm(body)
@@ -64,8 +130,19 @@ def bind_process_forward(skel_frame0: np.ndarray, forward_mode: str = "body") ->
     return forward.astype(np.float64)
 
 
-def bind_forward_dot(skel_frame0: np.ndarray, forward_mode: str = "body") -> float:
-    forward = bind_process_forward(skel_frame0, forward_mode=forward_mode)
+def bind_forward_dot(
+    skel_frame0: np.ndarray,
+    forward_mode: str = "body",
+    *,
+    joint_names: list[str] | None = None,
+    parents: np.ndarray | None = None,
+) -> float:
+    forward = bind_process_forward(
+        skel_frame0,
+        forward_mode=forward_mode,
+        joint_names=joint_names,
+        parents=parents,
+    )
     forward_xz = forward[[0, 2]]
     forward_xz = forward_xz / (np.linalg.norm(forward_xz) + 1e-8)
     return float(np.dot(forward_xz, CANONICAL_FORWARD_XZ))
@@ -75,11 +152,15 @@ def yaw_correction_quaternion(
     skel_frame0: np.ndarray,
     forward_mode: str = "body",
     dot_threshold: float = 0.9,
+    *,
+    joint_names: list[str] | None = None,
+    parents: np.ndarray | None = None,
 ) -> Quaternions | None:
-    dot = bind_forward_dot(skel_frame0, forward_mode=forward_mode)
+    kwargs = {"joint_names": joint_names, "parents": parents}
+    dot = bind_forward_dot(skel_frame0, forward_mode=forward_mode, **kwargs)
     if dot >= dot_threshold:
         return None
-    current = bind_process_forward(skel_frame0, forward_mode=forward_mode)
+    current = bind_process_forward(skel_frame0, forward_mode=forward_mode, **kwargs)
     target = np.array([0.0, 0.0, 1.0], dtype=np.float64)
     corr = Quaternions.between(current, target)
     return corr[0:1]
@@ -134,8 +215,16 @@ def canonicalize_motion_bind_pose(
     """
     forward_mode = forward_mode or motion.get("_forward_mode", "body")
     skel = motion["skel"]
+    joint_names = motion.get("joint_names")
+    parents = motion.get("parents")
+    if parents is None and motion.get("anim") is not None:
+        parents = np.asarray(motion["anim"].parents, dtype=np.int64)
     q_corr = yaw_correction_quaternion(
-        skel[0], forward_mode=forward_mode, dot_threshold=dot_threshold
+        skel[0],
+        forward_mode=forward_mode,
+        dot_threshold=dot_threshold,
+        joint_names=joint_names,
+        parents=parents,
     )
     if q_corr is None:
         return motion, False
@@ -153,9 +242,16 @@ def canonicalize_skel_quat_arrays(
     quat: np.ndarray | None = None,
     forward_mode: str = "body",
     dot_threshold: float = 0.9,
+    *,
+    joint_names: list[str] | None = None,
+    parents: np.ndarray | None = None,
 ) -> tuple[np.ndarray, np.ndarray | None, bool]:
     q_corr = yaw_correction_quaternion(
-        skel[0], forward_mode=forward_mode, dot_threshold=dot_threshold
+        skel[0],
+        forward_mode=forward_mode,
+        dot_threshold=dot_threshold,
+        joint_names=joint_names,
+        parents=parents,
     )
     if q_corr is None:
         return skel, quat, False
@@ -171,7 +267,9 @@ def get_width(vertices: np.ndarray) -> np.ndarray:
     return box_max - box_min
 
 
-def recompute_joint_shape(rest_vertices: np.ndarray, vertex_part: np.ndarray, num_joints: int = NUM_JOINTS):
+def recompute_joint_shape(rest_vertices: np.ndarray, vertex_part: np.ndarray, num_joints: int | None = None):
+    if num_joints is None:
+        num_joints = int(np.max(vertex_part) + 1) if len(vertex_part) else NUM_JOINTS
     shape_lst = []
     for joint_idx in range(num_joints):
         mask = vertex_part == joint_idx
@@ -188,10 +286,14 @@ def canonicalize_shape_npz_arrays(
     dot_threshold: float = 0.9,
 ) -> tuple[dict, bool]:
     skeleton = payload["skeleton"].astype(np.float64)
+    joint_names = decode_name_list(payload.get("joint_names"))
+    parents = payload.get("topology", payload.get("parents"))
     q_corr = yaw_correction_quaternion(
         skeleton[0] if skeleton.ndim == 3 else skeleton,
         forward_mode=forward_mode,
         dot_threshold=dot_threshold,
+        joint_names=joint_names,
+        parents=parents,
     )
     if q_corr is None:
         return payload, False
@@ -211,7 +313,9 @@ def canonicalize_shape_npz_arrays(
 
     if "vertex_part" in payload:
         out["joint_shape"] = recompute_joint_shape(
-            rest_vertices, payload["vertex_part"], num_joints=NUM_JOINTS
+            rest_vertices,
+            payload["vertex_part"],
+            num_joints=int(np.asarray(payload["skeleton"]).reshape(-1, 3).shape[0]),
         ).astype(np.float32)
 
     if "rest_body_vertices" in payload:

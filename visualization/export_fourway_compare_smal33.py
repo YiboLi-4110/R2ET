@@ -37,21 +37,23 @@ if str(_SCRIPT_DIR) not in sys.path:
 from compare_assets import enrich_case_assets
 from compare_lanes import compare_lane_titles, include_copyquat_lane
 
+from datasets.lbs_runtime import skin_mesh_sequence
 from datasets.smal33_motion_io import (
     NUM_JOINTS,
     SMAL33_PARENTS,
     build_model_inputs,
     get_height_from_skel,
     get_inp_from_bvh,
+    lbs_rest_skel_from_mesh,
     load_mesh_from_npz,
     load_shape_retnet,
     load_shape_vector,
     load_stats,
+    report_lbs_rest_skel_mismatch,
     retarget_to_bvh,
     setup_cuda_device,
 )
 from src.forward_kinematics import FK
-from src.linear_blend_skin import linear_blend_skinning
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 
@@ -78,13 +80,31 @@ def motion_parse_options(motion_cfg: dict[str, Any], prefix: str):
     return {
         "axis_transform": motion_cfg.get(f"{prefix}_axis_transform", "none"),
         "forward_mode": motion_cfg.get(f"{prefix}_forward_mode", "body"),
+        "post_axis_yaw_deg": float(motion_cfg.get(f"{prefix}_post_axis_yaw_deg", 0.0) or 0.0),
+        "canonicalize_bind_pose": bool(
+            motion_cfg.get(f"{prefix}_canonicalize_bind_pose", True)
+        ),
+    }
+
+
+def mesh_load_options(motion_cfg: dict[str, Any], prefix: str):
+    return {
+        "canonicalize_bind_pose": bool(
+            motion_cfg.get(f"{prefix}_canonicalize_bind_pose", True)
+        ),
+        "forward_mode": motion_cfg.get(f"{prefix}_forward_mode", "body"),
     }
 
 
 @torch.no_grad()
-def run_stage2_inference(model, inp_motion, tgt_motion, inp_shape, tgt_shape, stats, device):
+def run_stage2_inference(
+    model, inp_motion, tgt_motion, inp_shape, tgt_shape, stats, device, gate_scale=1.0
+):
     inp_batch = build_model_inputs(inp_motion, stats, inp_shape, device)
     tgt_batch = build_model_inputs(tgt_motion, stats, tgt_shape, device)
+    # gate_scale maps to the model's global balance-gate multiplier `k`
+    # (qB = lerp(qB_base, qB_hat, gate*k)). >1 strengthens the shape/collision
+    # correction at inference time, no retrain needed. See RetNet.forward.
     local_b, global_b, quat_b, _, _ = model(
         inp_batch["seq"],
         tgt_batch["seq"],
@@ -100,6 +120,7 @@ def run_stage2_inference(model, inp_motion, tgt_motion, inp_shape, tgt_shape, st
         stats["quat_mean"],
         stats["quat_std"],
         SMAL33_PARENTS,
+        k=float(gate_scale),
         phase="test",
     )
     return (
@@ -107,22 +128,6 @@ def run_stage2_inference(model, inp_motion, tgt_motion, inp_shape, tgt_shape, st
         global_b[0].cpu().numpy(),
         quat_b[0].cpu().numpy(),
     )
-
-
-@torch.no_grad()
-def skin_mesh_sequence(quat_np, rest_skel_np, mesh_data, device):
-    quat_t = torch.from_numpy(quat_np).float().to(device)
-    rest_t = torch.from_numpy(rest_skel_np).float().to(device)
-    verts_t = torch.from_numpy(mesh_data["vertices"]).float().to(device)
-    weights_t = torch.from_numpy(mesh_data["skin_weights"]).float().to(device)
-    out = linear_blend_skinning(
-        torch.as_tensor(SMAL33_PARENTS, dtype=torch.long, device=device),
-        quat_t,
-        rest_t,
-        verts_t,
-        weights_t,
-    )
-    return out.detach().cpu().numpy()
 
 
 def align_frames(arr: np.ndarray, num_frames: int) -> np.ndarray:
@@ -323,19 +328,23 @@ def load_arp_mesh_cache(
     return verts
 
 
-def compute_copyquat_outputs(inp_motion, tgt_motion, device):
+def compute_copyquat_outputs(inp_motion, tgt_motion, device, rest_skel_tgt=None):
     source_quat = inp_motion["quat"].astype(np.float32)
     num_frames = len(source_quat)
     global_in = inp_motion["seq"][:, -8:-4].astype(np.float32)
     h_in = float(get_height_from_skel(inp_motion["skel"][0]))
-    h_tgt = float(get_height_from_skel(tgt_motion["skel"][0]))
+    rest_skel_tgt = (
+        np.asarray(rest_skel_tgt, dtype=np.float32)
+        if rest_skel_tgt is not None
+        else tgt_motion["skel"][0].astype(np.float32)
+    )
+    h_tgt = float(get_height_from_skel(rest_skel_tgt))
     scale = 1.0 if abs(h_in) < 1e-8 else (h_tgt / h_in)
 
     global_out = np.zeros_like(global_in, dtype=np.float32)
     global_out[:, :3] = global_in[:, :3] * scale
     global_out[:, 3] = global_in[:, 3]
 
-    rest_skel_tgt = tgt_motion["skel"][0].astype(np.float32)
     rest_repeat = np.repeat(rest_skel_tgt[None], num_frames, axis=0)
     parents = torch.as_tensor(SMAL33_PARENTS, dtype=torch.long, device=device)
     local_out = (
@@ -371,8 +380,30 @@ def export_case(case_cfg: dict[str, Any], cfg: dict[str, Any], stage2_model, sta
 
     inp_shape = load_shape_vector(case_cfg["inp_shape_path"])
     tgt_shape = load_shape_vector(case_cfg["tgt_shape_path"])
-    inp_mesh = load_mesh_from_npz(case_cfg["inp_shape_path"])
-    tgt_mesh = load_mesh_from_npz(case_cfg["tgt_shape_path"])
+    inp_mesh = load_mesh_from_npz(
+        case_cfg["inp_shape_path"], **mesh_load_options(motion_cfg, "inp")
+    )
+    tgt_mesh = load_mesh_from_npz(
+        case_cfg["tgt_shape_path"], **mesh_load_options(motion_cfg, "tgt")
+    )
+    inp_rest_skel = lbs_rest_skel_from_mesh(
+        inp_mesh, fallback_skel=inp_motion["skel"][0]
+    )
+    tgt_rest_skel = lbs_rest_skel_from_mesh(
+        tgt_mesh, fallback_skel=tgt_motion["skel"][0]
+    )
+    report_lbs_rest_skel_mismatch(
+        inp_rest_skel,
+        inp_motion["skel"][0],
+        label=f"{case_id}/inp",
+        mesh_canonicalized=inp_mesh.get("bind_pose_canonicalized"),
+    )
+    report_lbs_rest_skel_mismatch(
+        tgt_rest_skel,
+        tgt_motion["skel"][0],
+        label=f"{case_id}/tgt",
+        mesh_canonicalized=tgt_mesh.get("bind_pose_canonicalized"),
+    )
 
     num_frames = len(inp_motion["quat"])
     render_cfg = cfg.get("render", {})
@@ -383,7 +414,7 @@ def export_case(case_cfg: dict[str, Any], cfg: dict[str, Any], stage2_model, sta
     src_quat = align_frames(src_quat, num_frames)
     source_verts = skin_mesh_sequence(
         src_quat,
-        inp_motion["skel"][0].astype(np.float32),
+        inp_rest_skel,
         inp_mesh,
         device,
     )
@@ -391,17 +422,20 @@ def export_case(case_cfg: dict[str, Any], cfg: dict[str, Any], stage2_model, sta
     copy_bvh = None
     copy_verts = None
     if export_copyquat:
-        copy_local, copy_global, copy_quat = compute_copyquat_outputs(inp_motion, tgt_motion, device)
+        copy_local, copy_global, copy_quat = compute_copyquat_outputs(
+            inp_motion, tgt_motion, device, rest_skel_tgt=tgt_rest_skel
+        )
         copy_local = align_frames(copy_local, num_frames)
         copy_global = align_frames(copy_global, num_frames)
         copy_quat = align_frames(copy_quat, num_frames)
         copy_verts = skin_mesh_sequence(
             copy_quat,
-            tgt_motion["skel"][0].astype(np.float32),
+            tgt_rest_skel,
             tgt_mesh,
             device,
         )
 
+    stage2_gate_scale = float(cfg.get("stage2", {}).get("gate_scale", 1.0))
     ours_local, ours_global, ours_quat = run_stage2_inference(
         stage2_model,
         inp_motion,
@@ -410,13 +444,14 @@ def export_case(case_cfg: dict[str, Any], cfg: dict[str, Any], stage2_model, sta
         tgt_shape,
         stats,
         device,
+        gate_scale=stage2_gate_scale,
     )
     ours_local = align_frames(ours_local.astype(np.float32), num_frames)
     ours_global = align_frames(ours_global.astype(np.float32), num_frames)
     ours_quat = align_frames(ours_quat.astype(np.float32), num_frames)
     ours_verts = skin_mesh_sequence(
         ours_quat,
-        tgt_motion["skel"][0].astype(np.float32),
+        tgt_rest_skel,
         tgt_mesh,
         device,
     )
@@ -476,11 +511,10 @@ def export_case(case_cfg: dict[str, Any], cfg: dict[str, Any], stage2_model, sta
         )
         if arp_motion is not None:
             arp_quat = align_frames(arp_motion["quat"].astype(np.float32), num_frames)
-            # The target mesh skin weights are bound to tgt_motion["skel"], so
-            # ARP quaternions must drive the same rest skeleton used by the mesh.
+            # Target mesh weights are bound to the (canonicalized) shape skeleton.
             arp_verts = skin_mesh_sequence(
                 arp_quat,
-                tgt_motion["skel"][0].astype(np.float32),
+                tgt_rest_skel,
                 tgt_mesh,
                 device,
             )

@@ -7,34 +7,55 @@
 #       * cross_external_target_prob: fraction of cross samples using batch2_dogs
 #       * 1 - cross_external_target_prob: fraction using another shepherd character
 # batch2_dogs has only 2-frame rest BVHs, so it cannot be used as motion source.
-work_dir: ./work_dir/train_shepherd_shapeaware_smal33_3
+work_dir: ./work_dir/train_smal@shepherd_batch3_dogs_shape_aware_smal33
 mesh_path: ./datasets/shepherd/smal@shepherd/train_shape/
 # Geometry loss (RDF/ATT) needs meshes for BOTH target types when cross_external_target_prob > 0.
 mesh_paths:
   - ./datasets/shepherd/smal@shepherd/train_shape/
-  - ./datasets/shepherd/batch2_dogs/batch2_dogs_shape/
+  - ./datasets/shepherd/batch3_dogs/batch3_dogs_shape/
 phase: train
 alpha: 100.0
 mu: 10.0
-omega_smooth: 0.0
-kappa: 0.5
-tao: 0.005
-w_front: 1.5
-w_hind: 3.0
-# w_tail_hind: 3.5
-w_tail_hind: 10.0
+kappa: 0.8
+tao: 0.002
+w_front: 10.0
+w_hind: 10.0
+w_tail_hind: 5.0
+# Directional tail-lift prior (plan A): on tail-vs-hind penetration, push tail
+# above the hind-leg top (+Y up) so the model raises the tail instead of only
+# swinging it sideways. Set 0 to disable.
+w_tail_lift: 2.5
+# Sagittal midplane prior: same penetration gate as w_tail_lift. Soft-penalize
+# |tail_x - Root.X| while fixing collision so lift prefers the body midplane.
+# Soft preference only (not always-on). Set 0 to disable.
+w_tail_mid: 1.5
+# Tail self-fold penalty (plan b): penalize the tail curve reversing on itself
+# (distal tail curling back into the upper tail). Only the proximal tail bones
+# (tail_dof_num, see ret_model_args) have shape DOF, so the distal tail follows
+# via FK; this guards residual reversal. Set 0 to disable.
+# w_tail_fold: 1.5
+w_tail_fold: 0
+# Tail vs torso+head RDF: once the tail lifts it can press onto the back/torso.
+# Toggle like enable_att_loss; w_tail_torso is its weight.
+enable_tail_torso_rdf: false
+w_tail_torso: 2.0
+# Distal-bend taper penalty (plan 3b): keep tail bending root-dominant (raise
+# Tail1 first, distal follows) instead of curling a mid/distal bone. Default 0
+# (off). With tail_dof_num=1 it is usually unnecessary; raise (e.g. 0.5~1.0) if
+# you widen tail_dof_num and the tail still lifts from the middle.
+w_tail_taper: 0
 w_att: 1.0
-enable_front_rdf: false
+enable_front_rdf: true
 sdf_grid_size: 32
-geo_frame_stride: 2
-enable_att_loss: false
+geo_frame_stride: 1
+enable_att_loss: true
 kp: 0.8
 margin: 0.3
 lam: 2.0
 euler_ord: yzx
 max_length: 32
 num_joint: 33
-seed: 3047
+seed: 3
 num_workers: 8
 
 train_feeder_args:
@@ -42,10 +63,10 @@ train_feeder_args:
   stats_path: ./datasets/shepherd/stats
   shape_path: ./datasets/shepherd/smal@shepherd/train_shape
   max_length: 32
-  min_frames: 16
+  min_frames: 12
   recompute_stats: false
-  target_data_path: ./datasets/shepherd/batch2_dogs/batch2_dogs_q
-  target_shape_path: ./datasets/shepherd/batch2_dogs/batch2_dogs_shape
+  target_data_path: ./datasets/shepherd/batch3_dogs/batch3_dogs_q
+  target_shape_path: ./datasets/shepherd/batch3_dogs/batch3_dogs_shape
   target_min_frames: 2
   cross_external_target_prob: 0.75
 
@@ -55,19 +76,25 @@ ret_model_args:
   hidden_channels_p: 256
   embed_channels_p: 128
   kp: 0.8
+  # Number of proximal tail bones with their own shape DOF (Tail1..TailN).
+  # 1 = only Tail1 rotates; the rest of the tail follows via FK, giving the most
+  # natural "raise from the base" motion. Increase for more distal control.
+  tail_dof_num: 1
 
 dis_model_args:
   kp: 0.8
 
-epoch: 240
+epoch: 180
 device: [0]
-step: [180]
+step: [80, 130]
 base_lr: 0.01
+# Multiplicative LR decay factor at each milestone in `step` (MultiStepLR gamma).
+# e.g. 0.1 -> lr *= 0.1; 0.5 -> lr *= 0.5
+lr_gamma: 0.5
 batch_size: 16
 weight_decay: 0.0
 model_save_name: r2et_shepherd_shape_aware_smal33
 # Point to shepherd stage-1 checkpoints after skeleton training finishes.
-ret_weights: ./work_dir/train_shepherd_skeleton_aware_smal33/r2et_shepherd_skeleton_aware_smal33_ret-176.pt
-dis_weights: ./work_dir/train_shepherd_skeleton_aware_smal33/r2et_shepherd_skeleton_aware_smal33_dis-176.pt
+ret_weights: ./work_dir/train_smal@shepherd_batch3_dogs_skeleton_aware_smal33/r2et_shepherd_skeleton_aware_smal33_ret-118.pt
+dis_weights: ./work_dir/train_smal@shepherd_batch3_dogs_skeleton_aware_smal33/r2et_shepherd_skeleton_aware_smal33_dis-118.pt
 ignore_weights: []
-master_port: 29507

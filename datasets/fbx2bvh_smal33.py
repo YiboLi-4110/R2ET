@@ -138,6 +138,18 @@ def parse_args():
         default="",
         help="Optional FBX import axis_up override (e.g. Y). Ignored when empty.",
     )
+    parser.add_argument(
+        "--bvh_yaw_deg",
+        type=float,
+        default=0.0,
+        help=(
+            "Optional rotation (degrees) about Blender's up axis (+Z) applied to "
+            "imported objects before BVH export. Default 0 preserves legacy "
+            "dog_actions / Planet Zoo behavior. Use 90 for ARP-exported "
+            "cat_actions / batch2_dogs so exported BVH facing matches dog_actions "
+            "and preprocess_q_smal33 can keep --post_axis_yaw_deg 0."
+        ),
+    )
     return parser.parse_args(argv)
 
 
@@ -345,15 +357,56 @@ def export_bvh(filepath, frame_start, frame_end):
     )
 
 
+def apply_pre_export_yaw_blender(yaw_deg):
+    """
+    Rotate all root-level objects about Blender +Z (up) and apply the transform.
+
+    Empirically, +90 aligns ARP cat_actions BVH facing with dog_actions after
+    mocap_y_up import (FBX looks identical; only BVH heading differs).
+    """
+    import math
+
+    if yaw_deg is None or abs(float(yaw_deg)) < 1e-8:
+        return False
+
+    ensure_object_mode()
+    delta = math.radians(float(yaw_deg))
+    roots = [obj for obj in bpy.data.objects if obj.parent is None]
+    if not roots:
+        roots = list(bpy.data.objects)
+
+    for obj in roots:
+        obj.rotation_mode = "XYZ"
+        obj.rotation_euler.z += delta
+        bpy.context.view_layer.update()
+        bpy.ops.object.select_all(action="DESELECT")
+        obj.select_set(True)
+        bpy.context.view_layer.objects.active = obj
+        bpy.ops.object.transform_apply(location=False, rotation=True, scale=False)
+
+    print(f"[fbx2bvh] applied pre-export Blender Z yaw: {float(yaw_deg):g} deg")
+    return True
+
+
 def cleanup_imported_actions():
     for action in list(bpy.data.actions):
         bpy.data.actions.remove(action)
 
 
-def convert_one(sourcepath, dumppath, cleanup_mode, force_rest_pose=False, min_rest_frames=2, fbx_axes=None):
+def convert_one(
+    sourcepath,
+    dumppath,
+    cleanup_mode,
+    force_rest_pose=False,
+    min_rest_frames=2,
+    fbx_axes=None,
+    bvh_yaw_deg=0.0,
+):
     cleanup_blender_scene(cleanup_mode)
     axis_forward, axis_up = fbx_axes if fbx_axes is not None else (None, None)
     import_fbx(sourcepath, axis_forward=axis_forward, axis_up=axis_up)
+
+    yaw_applied = apply_pre_export_yaw_blender(bvh_yaw_deg)
 
     frame_start, frame_end, export_mode = resolve_export_frames(
         force_rest_pose=force_rest_pose,
@@ -369,6 +422,8 @@ def convert_one(sourcepath, dumppath, cleanup_mode, force_rest_pose=False, min_r
         "frame_start": int(frame_start),
         "frame_end": int(frame_end),
         "frame_count": int(frame_end - frame_start + 1),
+        "bvh_yaw_deg": float(bvh_yaw_deg or 0.0),
+        "bvh_yaw_applied": bool(yaw_applied),
     }
 
 
@@ -445,6 +500,8 @@ def run_single_worker(args, data_root):
     fbx_axes = resolve_fbx_import_axes(args)
     if fbx_axes != (None, None):
         print(f"FBX import axes: forward={fbx_axes[0]!r}, up={fbx_axes[1]!r}")
+    if abs(float(args.bvh_yaw_deg or 0.0)) >= 1e-8:
+        print(f"BVH pre-export Blender Z yaw: {args.bvh_yaw_deg} deg")
 
     worker_label = ""
     if args.worker_count > 1:
@@ -471,6 +528,7 @@ def run_single_worker(args, data_root):
                     force_rest_pose=args.force_rest_pose,
                     min_rest_frames=args.min_rest_frames,
                     fbx_axes=fbx_axes,
+                    bvh_yaw_deg=args.bvh_yaw_deg,
                 )
                 processed += 1
                 results.append(result)
@@ -572,6 +630,8 @@ def run_parallel_workers(args, data_root):
                 cmd.extend(["--fbx_axis_forward", args.fbx_axis_forward])
             if args.fbx_axis_up:
                 cmd.extend(["--fbx_axis_up", args.fbx_axis_up])
+            if abs(float(args.bvh_yaw_deg or 0.0)) >= 1e-8:
+                cmd.extend(["--bvh_yaw_deg", str(args.bvh_yaw_deg)])
 
             print(f"Starting worker {worker_id + 1}/{workers} -> {worker_log.name}")
             with worker_log.open("w", encoding="utf-8") as log_file:

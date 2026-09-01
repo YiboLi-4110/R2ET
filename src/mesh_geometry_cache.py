@@ -48,9 +48,9 @@ def build_mesh_geometry_cache(mesh_file_dic, mesh_groups):
 
         torso_lst = mesh_groups["torso"][mesh_name]
         head_lst = mesh_groups["head"][mesh_name]
-        hind_lst = list(mesh_groups["left_hind"][mesh_name]) + list(
-            mesh_groups["right_hind"][mesh_name]
-        )
+        left_hind_lst = mesh_groups["left_hind"][mesh_name]
+        right_hind_lst = mesh_groups["right_hind"][mesh_name]
+        hind_lst = list(left_hind_lst) + list(right_hind_lst)
 
         hulls = {}
         torso_hull = _convex_hull_mapping(rest_vertices, torso_lst)
@@ -60,9 +60,19 @@ def build_mesh_geometry_cache(mesh_file_dic, mesh_groups):
         head_hull = _convex_hull_mapping(rest_vertices, head_lst)
         if head_hull is not None:
             hulls["head"] = head_hull
+        # Merged hind hull kept for eval-stats backward compat.
         hind_hull = _convex_hull_mapping(rest_vertices, hind_lst)
         if hind_hull is not None:
             hulls["hind"] = hind_hull
+        # Per-leg hind hulls (plan C): tail repels from each hind leg
+        # separately so the "crotch" between legs is not filled by one big
+        # convex hull, which previously pushed the tail sideways only.
+        left_hind_hull = _convex_hull_mapping(rest_vertices, left_hind_lst)
+        if left_hind_hull is not None:
+            hulls["left_hind"] = left_hind_hull
+        right_hind_hull = _convex_hull_mapping(rest_vertices, right_hind_lst)
+        if right_hind_hull is not None:
+            hulls["right_hind"] = right_hind_hull
 
         cache[mesh_name] = {
             "vertices": torch.from_numpy(rest_vertices),

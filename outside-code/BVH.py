@@ -76,7 +76,7 @@ def load(filename, start=None, end=None, order=None, world=False):
 
         """ Modified line read to handle mixamo data """
 #        rmatch = re.match(r"ROOT (\w+)", line)
-        rmatch = re.match(r"ROOT (\w+:?\w+)", line)
+        rmatch = re.match(r"ROOT\s+(\S+)", line)
         if rmatch:
             names.append(rmatch.group(1))
             offsets    = np.append(offsets,    np.array([[0,0,0]]),   axis=0)
@@ -112,7 +112,7 @@ def load(filename, start=None, end=None, order=None, world=False):
 
         """ Modified line read to handle mixamo data """
 #        jmatch = re.match("\s*JOINT\s+(\w+)", line)
-        jmatch = re.match("\s*JOINT\s+(\w+:?\w+)", line)
+        jmatch = re.match(r"\s*JOINT\s+(\S+)", line)
         if jmatch:
             names.append(jmatch.group(1))
             offsets    = np.append(offsets,    np.array([[0,0,0]]),   axis=0)
@@ -238,7 +238,7 @@ def load2(filename, start=None, end=None, order=None, world=False):
 
         """ Modified line read to handle mixamo data """
 #        rmatch = re.match(r"ROOT (\w+)", line)
-        rmatch = re.match(r"ROOT (\w+:?\w+)", line)
+        rmatch = re.match(r"ROOT\s+(\S+)", line)
         if rmatch:
             names.append(rmatch.group(1))
             offsets    = np.append(offsets,    np.array([[0,0,0]]),   axis=0)
@@ -274,7 +274,7 @@ def load2(filename, start=None, end=None, order=None, world=False):
 
         """ Modified line read to handle mixamo data """
 #        jmatch = re.match("\s*JOINT\s+(\w+)", line)
-        jmatch = re.match("\s*JOINT\s+(\w+:?\w+)", line)
+        jmatch = re.match(r"\s*JOINT\s+(\S+)", line)
         if jmatch:
             names.append(jmatch.group(1))
             offsets    = np.append(offsets,    np.array([[0,0,0]]),   axis=0)

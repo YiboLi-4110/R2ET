@@ -41,6 +41,16 @@ def parse_args():
         default="across",
         help="Canonical forward estimator. Planet Zoo default is across; shepherd should use body.",
     )
+    parser.add_argument(
+        "--post_axis_yaw_deg",
+        type=float,
+        default=0.0,
+        help=(
+            "Optional world yaw (degrees about +Y) applied after axis_transform. "
+            "Default 0 preserves existing behavior. Use 90 for ARP cat_actions / "
+            "batch2_dogs so they face +Z like dog_actions after shepherd_y_z_x."
+        ),
+    )
     parser.add_argument("--overwrite_existing", action="store_true")
     return parser.parse_args()
 
@@ -67,7 +77,10 @@ def main():
 
     print(f"Processing: {data_path}")
     print(f"Saving to:   {save_path}")
-    print(f"axis_transform={args.axis_transform}, forward_mode={args.forward_mode}")
+    print(
+        f"axis_transform={args.axis_transform}, forward_mode={args.forward_mode}, "
+        f"post_axis_yaw_deg={args.post_axis_yaw_deg}"
+    )
 
     total = processed = skipped = failed = 0
     for folder, bvh_path in iter_bvh_files(data_path):
@@ -82,6 +95,7 @@ def main():
                 bvh_path,
                 axis_transform=args.axis_transform,
                 forward_mode=args.forward_mode,
+                post_axis_yaw_deg=args.post_axis_yaw_deg,
             )
             if motion is None:
                 skipped += 1

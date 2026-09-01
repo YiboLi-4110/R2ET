@@ -13,23 +13,28 @@ render:
   render_engine: eevee # eevee | cycles
   resolution_x: 1920
   resolution_y: 1080
-  fps: 24
+  fps: 18
   frame_step: 1
   lane_spacing: 1.3
   include_copyquat: true
   lane_label_size: 0.35
   camera_distance_scale: 1.5
-  camera_lens_mm: 70.0
+  camera_lens_mm: 73.0
   # Optional absolute camera control (set to [x, y, z]); null uses auto camera.
-  camera_position_xyz: [12.0, 0.5, 4.2]
-  camera_target_xyz: [0.0, 0.0, 0.0]
+  camera_position_xyz: [12.0, 0.5, 3.6]
+  camera_target_xyz: [0.0, 0.0, 0.5]
   # LBS renderer uses this as the row center; null falls back to camera_target_xyz.
   layout_center_xyz: null
+  # Absolute Blender Z for lane title labels. When set, all four labels share
+  # this fixed height (recommended: stops Jump etc. from pushing titles out of
+  # frame). When null, falls back to auto: max mesh top over the clip + offset.
+  lane_label_z: 1.6
+  # Only used when lane_label_z is null.
   lane_label_z_offset: 0.25
   lane_label_color: [1.0, 0.0, 0.0, 1.0]
-  sun_light_position_xyz: [20.0, 20.0, 60.0]
-  sun_light_rotation_deg: [55.0, -20.0, 40.0]
-  sun_light_energy: 6.5
+  sun_light_position_xyz: [20.0, 0.5, 30.0]
+  sun_light_rotation_deg: [0.0, 35.0, 30.0]
+  sun_light_energy: 7.0
   fill_light_position_xyz: [0.0, 0.0, 18.0]
   fill_light_energy: 600.0
   fill_light_size: 20.0
@@ -37,8 +42,8 @@ render:
   # LBS vertices are Y-up; convert them onto Blender's Z-up floor.
   lbs_axis_transform: y_up_to_z_up
   # Positive values rotate counter-clockwise around Blender Z; use -30 for clockwise.
-  # lbs_global_yaw_deg: -45.0
-  lbs_global_yaw_deg: 70.0
+  lbs_global_yaw_deg: -45.0
+  # lbs_global_yaw_deg: 70.0
   lbs_lane_yaw_deg_default: 0.0
   lbs_lane_yaw_deg:
     source: 0.0
@@ -73,10 +78,17 @@ ret_model_args:
   hidden_channels_p: 256
   embed_channels_p: 128
   kp: 0.8
+  # MUST match training (checkpoint tail decoder is sized by this).
+  tail_dof_num: 1
 
 model:
-  stage2_weights: ./work_dir/train_shepherd_shapeaware_smal33/r2et_shepherd_shape_aware_smal33_ret-180.pt
+  stage2_weights: ./work_dir/train_shepherd_shapeaware_smal33_9/r2et_shepherd_shape_aware_smal33_ret-195.pt
   stats_path: ./datasets/shepherd/stats
+
+# Stage-2 inference knobs (used by export_fourway_compare_smal33.py).
+stage2:
+  # Global balance-gate multiplier k (>1 strengthens shape/collision correction).
+  gate_scale: 1.5
 
 # ARP IO conventions for batch mode.
 arp:

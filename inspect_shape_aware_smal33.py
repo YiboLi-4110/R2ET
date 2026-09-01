@@ -33,6 +33,7 @@ import yaml
 from matplotlib.colors import to_rgb
 from mpl_toolkits.mplot3d.art3d import Poly3DCollection
 
+from datasets.lbs_runtime import skin_mesh_sequence
 from datasets.smal33_motion_io import (
     NUM_JOINTS,
     SMAL33_PARENTS,
@@ -41,16 +42,17 @@ from datasets.smal33_motion_io import (
     character_label_from_path,
     dump_json,
     get_inp_from_bvh,
+    lbs_rest_skel_from_mesh,
     load_mesh_from_npz,
     load_retnet,
     load_shape_retnet,
     load_shape_vector,
     load_stats,
+    report_lbs_rest_skel_mismatch,
     rest_skel_to_world,
     setup_cuda_device,
     world_joints_from_motion,
 )
-from src.linear_blend_skin import linear_blend_skinning
 
 REPO_ROOT = Path(__file__).resolve().parent
 
@@ -269,18 +271,6 @@ def trim_motion(motion, num_frames):
         if key in out and out[key] is not None:
             out[key] = out[key][:num_frames]
     return out
-
-
-@torch.no_grad()
-def skin_mesh_sequence(quat_np, rest_skel_np, mesh_data, device):
-    quat_t = torch.from_numpy(quat_np).float().to(device)
-    rest_t = torch.from_numpy(rest_skel_np).float().to(device)
-    verts_t = torch.from_numpy(mesh_data["vertices"]).float().to(device)
-    weights_t = torch.from_numpy(mesh_data["skin_weights"]).float().to(device)
-    out = linear_blend_skinning(
-        SMAL33_PARENTS, quat_t, rest_t, verts_t, weights_t
-    )
-    return out.cpu().numpy().astype(np.float32)
 
 
 def build_target_rest_world(tgt_motion):
@@ -821,6 +811,20 @@ def motion_parse_options(load_data, prefix):
             f"{prefix}_forward_mode",
             load_data.get("forward_mode", "across"),
         ),
+        "canonicalize_bind_pose": bool(
+            load_data.get(
+                f"{prefix}_canonicalize_bind_pose",
+                load_data.get("canonicalize_bind_pose", True),
+            )
+        ),
+    }
+
+
+def mesh_load_options(load_data, prefix):
+    opts = motion_parse_options(load_data, prefix)
+    return {
+        "canonicalize_bind_pose": opts["canonicalize_bind_pose"],
+        "forward_mode": opts["forward_mode"],
     }
 
 
@@ -898,13 +902,29 @@ def main():
 
     inp_char = character_label_from_path(load_data["inp_shape_path"])
     tgt_char = character_label_from_path(load_data["tgt_shape_path"])
-    inp_mesh = load_mesh_from_npz(load_data["inp_shape_path"])
-    tgt_mesh = load_mesh_from_npz(load_data["tgt_shape_path"])
+    inp_mesh = load_mesh_from_npz(
+        load_data["inp_shape_path"], **mesh_load_options(load_data, "inp")
+    )
+    tgt_mesh = load_mesh_from_npz(
+        load_data["tgt_shape_path"], **mesh_load_options(load_data, "tgt")
+    )
     inp_faces = subsample_faces(inp_mesh["faces"], p.mesh_face_stride)
     tgt_faces = subsample_faces(tgt_mesh["faces"], p.mesh_face_stride)
 
-    inp_tpose = motion_tpose(inp_motion["skel"])
-    tgt_tpose = motion_tpose(tgt_motion["skel"])
+    inp_tpose = lbs_rest_skel_from_mesh(inp_mesh, fallback_skel=inp_motion["skel"][0])
+    tgt_tpose = lbs_rest_skel_from_mesh(tgt_mesh, fallback_skel=tgt_motion["skel"][0])
+    report_lbs_rest_skel_mismatch(
+        inp_tpose,
+        inp_motion["skel"][0],
+        label="inp",
+        mesh_canonicalized=inp_mesh.get("bind_pose_canonicalized"),
+    )
+    report_lbs_rest_skel_mismatch(
+        tgt_tpose,
+        tgt_motion["skel"][0],
+        label="tgt",
+        mesh_canonicalized=tgt_mesh.get("bind_pose_canonicalized"),
+    )
     source_quat = inp_motion["quat"].astype(np.float32)
 
     source_verts = skin_mesh_sequence(source_quat, inp_tpose, inp_mesh, device)

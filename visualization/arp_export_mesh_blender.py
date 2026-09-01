@@ -39,6 +39,7 @@ from arp_blender_common import (
     try_enable_addons,
 )
 from compare_assets import enrich_case_assets
+from fbx_bake_cache import save_fbx_bake_cache
 
 
 def parse_args(argv):
@@ -84,6 +85,7 @@ ROOT_BONE_CANDIDATES = (
     "smal:Root",
     "Root",
     "root",
+    "root_bone",  # sucaibao / game-pack cats
     "c_root",
     "c_traj",
     "Hips",
@@ -152,6 +154,44 @@ def sample_evaluated_mesh(mesh_obj, armature_obj, frame_start: int, frame_end: i
     return np.stack(vertices, axis=0), faces, root_bone_name
 
 
+def blender_matrix_to_np(mat) -> np.ndarray:
+    arr = np.eye(4, dtype=np.float64)
+    for i in range(4):
+        for j in range(4):
+            arr[i, j] = float(mat[i][j])
+    return arr
+
+
+def sample_armature_bake_cache(armature_obj, frame_start: int, frame_end: int):
+    """Rest + posed bone matrices in armature space (same FBX the packer re-imports)."""
+    scene = bpy.context.scene
+    depsgraph = bpy.context.evaluated_depsgraph_get()
+    bone_names = [bone.name for bone in armature_obj.data.bones]
+    rest = np.stack(
+        [
+            blender_matrix_to_np(armature_obj.data.bones[name].matrix_local)
+            for name in bone_names
+        ],
+        axis=0,
+    )
+    frames = []
+    for frame in range(int(frame_start), int(frame_end) + 1):
+        scene.frame_set(frame)
+        bpy.context.view_layer.update()
+        eval_arm = armature_obj.evaluated_get(depsgraph)
+        mats = []
+        for name in bone_names:
+            pose_bone = eval_arm.pose.bones.get(name)
+            if pose_bone is None:
+                mats.append(np.eye(4, dtype=np.float64))
+            else:
+                mats.append(blender_matrix_to_np(pose_bone.matrix))
+        frames.append(np.stack(mats, axis=0))
+    ours = np.stack(frames, axis=0)
+    fps = max(int(scene.render.fps), 1)
+    return rest, ours, bone_names, 1.0 / float(fps)
+
+
 def export_target_bvh(target_arm, out_path: Path, frame_start: int, frame_end: int):
     out_path.parent.mkdir(parents=True, exist_ok=True)
     bpy.ops.object.select_all(action="DESELECT")
@@ -208,48 +248,89 @@ def run_case(case_cfg, cfg, op_sequence):
 
     mesh_dir = Path(arp_cfg.get("mesh_output_dir", "./visualization/videos/compare/arp_mesh_outputs"))
     mesh_dir.mkdir(parents=True, exist_ok=True)
-    mesh_path = mesh_dir / f"{case_id}_arp_mesh.npz"
-    export_space = str(arp_cfg.get("mesh_export_space", "world_root_h_locked_zup")).lower()
-    valid_spaces = {
-        "blender_world_z_up",
-        "mesh_local_zup",
-        "armature_local_zup",
-        "root_bone_local_zup",
-        "world_root_h_locked_zup",
-    }
-    if export_space not in valid_spaces:
-        print(
-            f"[arp-mesh][warn] unknown mesh_export_space='{export_space}', "
-            "fallback to world_root_h_locked_zup"
-        )
-        export_space = "world_root_h_locked_zup"
-    verts, faces, root_bone_name = sample_evaluated_mesh(
-        target_mesh,
-        target_arm,
-        frame_start,
-        frame_end,
-        export_space,
+    bake_dir = Path(arp_cfg.get("bake_output_dir", mesh_dir))
+    bake_dir.mkdir(parents=True, exist_ok=True)
+    bvh_dir = Path(arp_cfg.get("output_dir", "./visualization/videos/compare/arp_outputs"))
+    bvh_dir.mkdir(parents=True, exist_ok=True)
+
+    export_mesh = bool(arp_cfg.get("export_mesh", True))
+    export_bvh = bool(arp_cfg.get("export_bvh", True))
+    export_bake = bool(arp_cfg.get("export_bake", False))
+
+    mesh_path = Path(case_cfg["mesh_path"]) if case_cfg.get("mesh_path") else mesh_dir / f"{case_id}_arp_mesh.npz"
+    bake_path = (
+        Path(case_cfg["bake_path"])
+        if case_cfg.get("bake_path")
+        else bake_dir / f"{case_id}_ours_fbx_bake.npz"
     )
-    np.savez_compressed(
-        mesh_path,
-        vertices=verts.astype(np.float32),
-        faces=faces.astype(np.int32),
-        frame_start=np.int32(frame_start),
-        frame_end=np.int32(frame_end),
-        space=export_space,
-        root_bone_name=np.asarray(root_bone_name),
-    )
-    print(
-        f"[arp-mesh][{case_id}] mesh cache: {mesh_path} "
-        f"(space={export_space}, root_bone={root_bone_name})"
+    suffix = arp_cfg.get("output_suffix", "_arp_retarget.bvh")
+    bvh_path = (
+        Path(case_cfg["arp_bvh_path"])
+        if case_cfg.get("arp_bvh_path")
+        else bvh_dir / f"{case_id}{suffix}"
     )
 
-    bvh_dir = Path(arp_cfg.get("output_dir", "./visualization/videos/compare/arp_outputs"))
-    suffix = arp_cfg.get("output_suffix", "_arp_retarget.bvh")
-    bvh_path = bvh_dir / f"{case_id}{suffix}"
-    export_target_bvh(target_arm, bvh_path, frame_start, frame_end)
-    print(f"[arp-mesh][{case_id}] bvh export: {bvh_path}")
-    return mesh_path
+    if export_mesh:
+        mesh_path.parent.mkdir(parents=True, exist_ok=True)
+        export_space = str(arp_cfg.get("mesh_export_space", "world_root_h_locked_zup")).lower()
+        valid_spaces = {
+            "blender_world_z_up",
+            "mesh_local_zup",
+            "armature_local_zup",
+            "root_bone_local_zup",
+            "world_root_h_locked_zup",
+        }
+        if export_space not in valid_spaces:
+            print(
+                f"[arp-mesh][warn] unknown mesh_export_space='{export_space}', "
+                "fallback to world_root_h_locked_zup"
+            )
+            export_space = "world_root_h_locked_zup"
+        verts, faces, root_bone_name = sample_evaluated_mesh(
+            target_mesh,
+            target_arm,
+            frame_start,
+            frame_end,
+            export_space,
+        )
+        np.savez_compressed(
+            mesh_path,
+            vertices=verts.astype(np.float32),
+            faces=faces.astype(np.int32),
+            frame_start=np.int32(frame_start),
+            frame_end=np.int32(frame_end),
+            space=export_space,
+            root_bone_name=np.asarray(root_bone_name),
+        )
+        print(
+            f"[arp-mesh][{case_id}] mesh cache: {mesh_path} "
+            f"(space={export_space}, root_bone={root_bone_name})"
+        )
+
+    if export_bake:
+        bake_path.parent.mkdir(parents=True, exist_ok=True)
+        rest_g, ours_g, joint_names, frametime = sample_armature_bake_cache(
+            target_arm, frame_start, frame_end
+        )
+        save_fbx_bake_cache(
+            bake_path,
+            {
+                "rest_globals": rest_g.astype(np.float64),
+                "ours_globals": ours_g.astype(np.float64),
+                "joint_names": np.asarray(joint_names, dtype=object),
+                "frametime": np.float64(frametime),
+                "space": np.asarray("fbx_armature"),
+            },
+        )
+        print(
+            f"[arp-mesh][{case_id}] bake cache: {bake_path} "
+            f"(T={ours_g.shape[0]} J={ours_g.shape[1]} space=fbx_armature)"
+        )
+
+    if export_bvh:
+        export_target_bvh(target_arm, bvh_path, frame_start, frame_end)
+        print(f"[arp-mesh][{case_id}] bvh export: {bvh_path}")
+    return mesh_path if export_mesh else bake_path
 
 
 def main():

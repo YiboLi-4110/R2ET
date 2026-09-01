@@ -153,14 +153,31 @@ def parse_vec3(value):
     return [float(value[0]), float(value[1]), float(value[2])]
 
 
+def resolve_lane_label_z(render_cfg, max_top_z, floor_z=0.0):
+    """
+    Absolute Blender Z for lane title labels.
+
+    When ``lane_label_z`` is set in render config, use it directly so label
+    height stays constant across actions (e.g. Jump no longer pushes titles
+    out of frame). Otherwise fall back to mesh bbox top + offset.
+    """
+    render_cfg = render_cfg or {}
+    fixed = render_cfg.get("lane_label_z")
+    if fixed is not None:
+        return float(fixed)
+    label_z_offset = float(render_cfg.get("lane_label_z_offset", 0.25))
+    return max(float(max_top_z), float(floor_z)) + label_z_offset
+
+
 def add_lane_labels(center, lane_spacing, z_lift=2.3, font_size=0.35, render_cfg=None):
     render_cfg = render_cfg or {}
     labels = compare_lane_titles(render_cfg)
     y_offsets = [
         lane_layout_offset(i, len(labels), lane_spacing) for i in range(len(labels))
     ]
+    label_z = resolve_lane_label_z(render_cfg, max_top_z=center.z + z_lift, floor_z=center.z)
     for text, y in zip(labels, y_offsets):
-        bpy.ops.object.text_add(location=(center.x, center.y + y, center.z + z_lift))
+        bpy.ops.object.text_add(location=(center.x, center.y + y, label_z))
         obj = bpy.context.object
         obj.data.body = text
         obj.data.size = float(font_size)

@@ -1,6 +1,6 @@
 # Stage-1 skeleton-aware visual inspection for smal@shepherd / batch2_dogs.
-weights: ./work_dir/train_shepherd_skeleton_aware_smal33/r2et_shepherd_skeleton_aware_smal33_ret-168.pt
-save_path: ./work_dir/train_shepherd_skeleton_aware_smal33/inspect
+weights: ./work_dir/train_smal@shepherd_batch3_dogs_skeleton_aware_smal33/r2et_shepherd_skeleton_aware_smal33_ret-118.pt
+save_path: ./work_dir/train_smal@shepherd_batch3_dogs_skeleton_aware_smal33/inspect
 device: 0
 self_recon: false
 view_mode: root_centered
@@ -17,13 +17,14 @@ ret_model_args:
 
 load_inp_data:
   stats_path: ./datasets/shepherd/stats
-  inp_shape_path: ./datasets/shepherd/smal@shepherd/train_shape/shepherd@Run.npz
-  # inp_shape_path: ./datasets/shepherd/smal@shepherd/train_shape/shepherd@Crouch.npz
-  tgt_shape_path: ./datasets/shepherd/batch2_dogs/batch2_dogs_shape/博美_3-0.npz
-  inp_bvh_path: ./datasets/shepherd/smal@shepherd/train_char/shepherd@Run/shepherd@Run_F_RM_smal_dog-foot_on_ground.bvh
-  # inp_bvh_path: ./datasets/shepherd/smal@shepherd/train_char/shepherd@Crouch/shepherd@Crouch_B_RM_smal_dog-foot_on_ground.bvh
-  tgt_bvh_path: ./datasets/shepherd/batch2_dogs/batch2_dogs_char/博美/博美_3-0.bvh
+  inp_shape_path: ./datasets/shepherd/smal@shepherd/train_shape/shepherd@Crouch.npz
+  tgt_shape_path: ./datasets/shepherd/batch3_dogs/batch3_dogs_shape/buou_4_buou-0.npz
+  inp_bvh_path: ./datasets/shepherd/smal@shepherd/train_char/shepherd@Crouch/shepherd@Crouch_BL_RM_smal_dog-foot_on_ground.bvh
+  tgt_bvh_path: ./datasets/shepherd/batch3_dogs/batch3_dogs_char/buou/buou_4_buou-0.bvh
   inp_axis_transform: shepherd_y_z_x
   inp_forward_mode: body
+  # Set to 90 after re-preprocessing ARP cat / batch2 with --post_axis_yaw_deg 90.
+  # inp_post_axis_yaw_deg: 0
   tgt_axis_transform: shepherd_y_z_x
   tgt_forward_mode: body
+  # tgt_post_axis_yaw_deg: 0

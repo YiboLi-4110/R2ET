@@ -255,18 +255,46 @@ def find_enabled_arp_addon_root() -> Path:
     )
 
 
-def install_remap_preset(arp_cfg: dict) -> Path:
-    """Copy repo .bmap into ARP remap_presets/ for import_config_preset."""
-    preset_name = arp_cfg.get("remap_preset_name", "smal33_to_smal33")
-    source = DEFAULT_REMAP_PRESET
+def resolve_remap_preset_source(arp_cfg: dict) -> tuple[Path, str]:
+    """Return (source_bmap_path, preset_name_for_arp_import)."""
+    explicit = arp_cfg.get("remap_preset_path")
+    preset_name = arp_cfg.get("remap_preset_name")
+    if explicit:
+        source = Path(explicit)
+        if not source.is_absolute():
+            source = (REPO_ROOT / source).resolve()
+        else:
+            source = source.resolve()
+        if not preset_name:
+            preset_name = source.stem
+    else:
+        if not preset_name:
+            preset_name = "smal33_to_smal33"
+        source = REPO_ROOT / "visualization" / "arp_presets" / f"{preset_name}.bmap"
+        if not source.exists():
+            source = DEFAULT_REMAP_PRESET
     if not source.exists():
         raise FileNotFoundError(f"Remap preset source not found: {source}")
+    return source, str(preset_name)
+
+
+def install_remap_preset(arp_cfg: dict) -> Path:
+    """Copy repo .bmap into ARP remap_presets/ for import_config_preset.
+
+    Resolution order:
+      1) arp.remap_preset_path (explicit file; name defaults to file stem)
+      2) visualization/arp_presets/<remap_preset_name>.bmap
+      3) fallback DEFAULT_REMAP_PRESET (smal33_to_smal33.bmap)
+    """
+    source, preset_name = resolve_remap_preset_source(arp_cfg)
+    # Keep name in cfg so import_config_preset uses the installed filename stem.
+    arp_cfg["remap_preset_name"] = preset_name
 
     preset_dir = find_enabled_arp_addon_root() / "remap_presets"
     preset_dir.mkdir(parents=True, exist_ok=True)
     target = preset_dir / f"{preset_name}.bmap"
     shutil.copy2(source, target)
-    print(f"[arp] installed remap preset: {target}")
+    print(f"[arp] installed remap preset: {source} -> {target}")
     return target
 
 

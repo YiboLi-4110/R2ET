@@ -8,6 +8,7 @@ Changes vs src/model_shape_aware.py:
   - Balancing gate (WeightsDecoder) unchanged in role, sized for 33 joints
   - RDF / ADF geometry losses extended for tail vertices and paw end-effectors
   - Symmetric RDF thresholds; weighted rep losses; tail-vs-hind cross RDF
+  - Tail midplane prior: soft |tail_x-Root.X| while fixing hind penetration
 """
 
 import math
@@ -31,17 +32,34 @@ LEFT_FRONT_JOINTS = [7, 8, 9]       # LeftScapula, LeftUpperArm, LeftForeLeg
 RIGHT_FRONT_JOINTS = [11, 12, 13]   # RightScapula, RightUpperArm, RightForeLeg
 LEFT_HIND_JOINTS = [18, 19]         # LeftThigh, LeftShin
 RIGHT_HIND_JOINTS = [22, 23]        # RightThigh, RightShin
-TAIL_JOINTS = [26, 27, 28]          # Tail1, Tail2, Tail3
+# Full tail chain (Tail1..Tail7). Used for FK-based tail geometry (fold penalty).
+TAIL_JOINTS = [26, 27, 28, 29, 30, 31, 32]
+# Number of PROXIMAL tail bones that get their own shape DOF (configurable via
+# ret_model_args.tail_dof_num). The remaining distal bones inherit the proximal
+# rotation through FK, so the tail is lifted as a coherent curve driven from the
+# root instead of the model curling a mid/distal bone (which looked unnatural
+# and caused self-penetration). With tail_dof_num=1 only Tail1 rotates and the
+# whole tail follows, matching the human-intuitive "raise from the base" motion.
+DEFAULT_TAIL_DOF_NUM = 1
+
+
+def tail_dof_joints(tail_dof_num=DEFAULT_TAIL_DOF_NUM):
+    n = max(1, min(int(tail_dof_num), len(TAIL_JOINTS)))
+    return TAIL_JOINTS[:n]
+
+
+# Back-compat alias (default proximal DOF joints).
+TAIL_DOF_JOINTS = tail_dof_joints()
 
 # Paw / end-effector joint indices for ADF (Attractive Distance Field).
 PAW_JOINT_INDICES = [10, 14, 21, 25]  # LeftFrontPaw, RightFrontPaw, LeftHindPaw, RightHindPaw
 
 # Symmetric RDF activation thresholds (ifth=True: penalize when phi_val > threshold).
 RDF_THRESHOLD_FRONT = 4.0
-RDF_THRESHOLD_HIND = 4.0
-RDF_THRESHOLD_TAIL_HIND = 4.0    # tail-into-hind legs: primary tail penetration mode
-DEFAULT_SDF_GRID_SIZE = 24       # 32 is slower; 24 is a good speed/quality tradeoff
-DEFAULT_GEO_FRAME_STRIDE = 2     # evaluate geometry loss every N frames
+RDF_THRESHOLD_HIND = 0.5
+RDF_THRESHOLD_TAIL_HIND = 0.5    # tail-into-hind legs: primary tail penetration mode
+DEFAULT_SDF_GRID_SIZE = 32       # 32 is slower; 24 is a good speed/quality tradeoff
+DEFAULT_GEO_FRAME_STRIDE = 1     # evaluate geometry loss every N frames
 
 
 class Attention(nn.Module):
@@ -336,9 +354,11 @@ class RetNet(nn.Module):
         hidden_channels_p=256,
         embed_channels_p=128,
         kp=0.8,
+        tail_dof_num=DEFAULT_TAIL_DOF_NUM,
     ):
         super().__init__()
         self.num_joint = num_joint
+        self.tail_dof_joints = tail_dof_joints(tail_dof_num)
         self.delta_dec = DeltaDecoder(
             num_joint, token_channels, embed_channels_p, hidden_channels_p, kp
         )
@@ -352,7 +372,9 @@ class RetNet(nn.Module):
         self.delta_rightHind_dec = DeltaShapeDecoder(
             2, num_joint, hidden_channels_p, kp
         )
-        self.delta_tail_dec = DeltaShapeDecoder(3, num_joint, hidden_channels_p, kp)
+        self.delta_tail_dec = DeltaShapeDecoder(
+            len(self.tail_dof_joints), num_joint, hidden_channels_p, kp
+        )
         self.weights_dec = WeightsDecoder(num_joint, hidden_channels_p, kp)
 
     def forward(
@@ -373,6 +395,7 @@ class RetNet(nn.Module):
         parents,
         k=-1,
         phase="train",
+        force_gate_ones=False,
     ):
         self.parents = parents
         bs, T = seqA.size(0), seqA.size(1)
@@ -408,7 +431,7 @@ class RetNet(nn.Module):
         right_front_joints = RIGHT_FRONT_JOINTS
         left_hind_joints = LEFT_HIND_JOINTS
         right_hind_joints = RIGHT_HIND_JOINTS
-        tail_joints = TAIL_JOINTS
+        tail_joints = self.tail_dof_joints
 
         for t in range(T):
             qoutA_t = quatA[:, t, :, :]
@@ -459,7 +482,7 @@ class RetNet(nn.Module):
             delta2_rh = normalized(delta2_rh)
 
             delta2_tail = self.delta_tail_dec(shapeA, shapeB, qB_base_norm)
-            delta2_tail = torch.reshape(delta2_tail, [bs, 3, 4])
+            delta2_tail = torch.reshape(delta2_tail, [bs, len(tail_joints), 4])
             delta2_tail = (
                 delta2_tail * quat_std[:, tail_joints, :]
                 + quat_mean[:, tail_joints, :]
@@ -481,7 +504,14 @@ class RetNet(nn.Module):
             bala_gate = self.weights_dec(refB_feed, shapeB, qB_base_norm)
             qB_hat = q_mul_q(qB_base, delta2)
 
-            if phase == "train":
+            # Inference knobs:
+            #   force_gate_ones + k=1 -> pure stage-2 (qB_hat)
+            #   k=0                  -> pure stage-1 (qB_base)
+            if force_gate_ones:
+                bala_gate = torch.ones(
+                    bala_gate.shape, dtype=torch.float32, device=seqA.device
+                )
+            elif phase == "train":
                 one_w = np.random.binomial(1, p=0.4)
                 if one_w:
                     bala_gate = torch.ones(bala_gate.shape, dtype=torch.float32).cuda(
@@ -621,31 +651,6 @@ class RetNet(nn.Module):
         return regular_weights_loss
 
     @staticmethod
-    def get_smooth_loss(localB_rt_denorm, mask):
-        """
-        Temporal smoothness penalty on denormalized local joint trajectories.
-
-        This mirrors the skeleton-aware stage and uses second-order finite
-        differences, so it damps frame-wise jitter without penalizing constant
-        velocity motion. Only valid, unpadded frame triplets contribute.
-        """
-        if localB_rt_denorm.shape[1] < 3:
-            return torch.tensor(0.0, device=localB_rt_denorm.device)
-        accel = (
-            localB_rt_denorm[:, 2:]
-            - 2 * localB_rt_denorm[:, 1:-1]
-            + localB_rt_denorm[:, :-2]
-        )
-        valid = mask[:, 2:] * mask[:, 1:-1] * mask[:, :-2]
-        accel_sq = torch.mean(torch.square(accel), dim=[2, 3])
-        smooth_loss = torch.sum(accel_sq * valid)
-        denom = torch.maximum(
-            torch.sum(valid),
-            torch.tensor(1.0, device=valid.device),
-        )
-        return torch.divide(smooth_loss, denom)
-
-    @staticmethod
     def _build_sdf_from_hull(
         vertices_centered_scaled,
         hull_spec,
@@ -776,6 +781,72 @@ class RetNet(nn.Module):
         return phi_val
 
     @staticmethod
+    def _tail_fold_loss(parents, quatB_rt, rest_skelB, frame_indices):
+        """
+        Penalize the tail curve folding back on itself.
+
+        Using FK tail-joint global positions, form consecutive bone segments
+        seg_k = p_{k+1} - p_k along the tail chain and penalize adjacent
+        segments pointing "backwards" (cos(seg_k, seg_{k+1}) < 0). A smoothly
+        bent tail keeps cos >= 0 and is not penalized; only a sharp reversal
+        (distal tail curling into the upper tail) is punished. Cheap: only
+        len(TAIL_JOINTS)-2 segment pairs.
+        """
+        device = quatB_rt.device
+        if len(TAIL_JOINTS) < 3:
+            return torch.zeros((), device=device)
+
+        # FK.run expects (bs, J, .) tensors; treat frames as the batch dim.
+        idx = torch.as_tensor(frame_indices, dtype=torch.long, device=device)
+        quat_frames = quatB_rt.index_select(0, idx)  # (F, J, 4)
+        rest_batch = rest_skelB[None].expand(quat_frames.shape[0], -1, -1)
+        joint_pos = FK.run(parents, rest_batch, quat_frames)  # (F, J, 3)
+
+        tail_idx = torch.as_tensor(TAIL_JOINTS, dtype=torch.long, device=device)
+        tail_pos = joint_pos.index_select(1, tail_idx)  # (F, n_tail, 3)
+
+        segs = tail_pos[:, 1:, :] - tail_pos[:, :-1, :]  # (F, n_tail-1, 3)
+        segs = segs / (segs.norm(dim=-1, keepdim=True) + 1e-8)
+        cos_adj = (segs[:, 1:, :] * segs[:, :-1, :]).sum(dim=-1)  # (F, n_tail-2)
+        fold = torch.relu(-cos_adj)  # >0 only where the chain reverses
+        return fold.mean()
+
+    @staticmethod
+    def _tail_taper_loss(parents, quatB_rt, rest_skelB, frame_indices):
+        """
+        Distal-bend penalty (plan 3b): keep the tail bend "root-dominant".
+
+        Bending at a joint = 1 - cos(angle) between its two incident tail
+        segments. We weight the bend increasingly toward the tail tip, so the
+        model prefers to solve lift/repulsion by rotating the PROXIMAL tail and
+        letting the distal tail follow, rather than curling a mid/distal bone
+        (which looked unnatural: "Tail2/Tail3 raised first"). Independent of how
+        many bones actually have DOF, so it still helps if DOF is widened later.
+        """
+        device = quatB_rt.device
+        if len(TAIL_JOINTS) < 3:
+            return torch.zeros((), device=device)
+
+        idx = torch.as_tensor(frame_indices, dtype=torch.long, device=device)
+        quat_frames = quatB_rt.index_select(0, idx)
+        rest_batch = rest_skelB[None].expand(quat_frames.shape[0], -1, -1)
+        joint_pos = FK.run(parents, rest_batch, quat_frames)
+
+        tail_idx = torch.as_tensor(TAIL_JOINTS, dtype=torch.long, device=device)
+        tail_pos = joint_pos.index_select(1, tail_idx)
+
+        segs = tail_pos[:, 1:, :] - tail_pos[:, :-1, :]
+        segs = segs / (segs.norm(dim=-1, keepdim=True) + 1e-8)
+        cos_adj = (segs[:, 1:, :] * segs[:, :-1, :]).sum(dim=-1)  # (F, n_tail-2)
+        bend = 1.0 - cos_adj  # 0 straight -> 2 reversed
+        n_bend = bend.shape[-1]
+        # Linearly increasing weight from proximal (~1) to distal (~n_bend).
+        w = torch.arange(
+            1, n_bend + 1, dtype=bend.dtype, device=device
+        ) / float(n_bend)
+        return (bend * w[None, :]).mean()
+
+    @staticmethod
     def get_rep_loss_part(
         parents,
         quatB_rt,
@@ -794,16 +865,19 @@ class RetNet(nn.Module):
         frame_stride=DEFAULT_GEO_FRAME_STRIDE,
         hull_cache=None,
         compute_front_rdf=True,
+        compute_tail_torso=True,
     ):
         vertices_lbs = linear_blend_skinning(
             parents, quatB_rt, rest_skelB, meshB, skinB_weights
         )
-        torso_hull = head_hull = hind_hull = None
+        torso_hull = head_hull = None
+        left_hind_hull = right_hind_hull = None
         if hull_cache is not None:
             hulls = hull_cache.get("hulls", {})
             torso_hull = hulls.get("torso")
             head_hull = hulls.get("head")
-            hind_hull = hulls.get("hind")
+            left_hind_hull = hulls.get("left_hind")
+            right_hind_hull = hulls.get("right_hind")
 
         scale_factor = 0.2
         boxes = get_bounding_boxes(vertices_lbs)
@@ -823,6 +897,35 @@ class RetNet(nn.Module):
 
         rep_loss_lf, rep_loss_rf, rep_loss_lh, rep_loss_rh = 0, 0, 0, 0
         rep_loss_tail_hind = 0
+        # Keep as a tensor so training's .item()/backward work even on batches
+        # where no frame penetrates (lift term never fires).
+        rep_loss_tail_lift = torch.zeros((), device=quatB_rt.device)
+        # Tail vs torso+head: only fires once we start lifting the tail (it can
+        # then press onto the back). Reuses the torso/head hulls already built.
+        rep_loss_tail_torso = torch.zeros((), device=quatB_rt.device)
+        # Sagittal midplane prior: keep the tail near Root.X while fixing
+        # tail-vs-hind penetration (same gate as tail_lift). Soft preference
+        # for midplane lift over sideways escape; not always-on.
+        rep_loss_tail_mid = torch.zeros((), device=quatB_rt.device)
+
+        # Tail self-fold penalty (plan b): penalize the tail curve bending back
+        # on itself (distal tail folding into the upper tail -> self-penetration).
+        # Uses FK joint global positions of the full tail chain; only 6 adjacent
+        # bone-segment pairs, so it is cheap and needs no SDF/hull.
+        rep_loss_tail_fold = RetNet._tail_fold_loss(
+            parents, quatB_rt, rest_skelB, frame_indices
+        )
+        # Distal-bend taper penalty (plan 3b): keep bending root-dominant so the
+        # model raises Tail1 first instead of curling Tail2/Tail3.
+        rep_loss_tail_taper = RetNet._tail_taper_loss(
+            parents, quatB_rt, rest_skelB, frame_indices
+        )
+
+        # Root joint X in the same centered/scaled frame as mesh RDF queries.
+        rest_batch = rest_skelB[None].expand(T, -1, -1)
+        joint_pos = FK.run(parents, rest_batch, quatB_rt)  # (T, J, 3)
+        root_centered = (joint_pos[:, 0:1, :] - boxes_center) / boxes_scale
+        root_x = root_centered[:, 0, 0]  # (T,)
 
         hind_vertices_lst = list(left_hind_vertices_lst) + list(
             right_hind_vertices_lst
@@ -873,22 +976,74 @@ class RetNet(nn.Module):
                 ifth,
             )
 
-            # Hind-legs obstacle: tail vs hind (primary tail penetration mode).
-            hind_sdf = RetNet._build_vertices_sdf(
+            # Plan C: tail repels from LEFT and RIGHT hind legs separately.
+            # A single merged hind-leg convex hull fills the crotch region
+            # where the tail naturally hangs, so its escape gradient is purely
+            # lateral (fix one leg -> hit the other). Per-leg hulls give a clean
+            # obstacle for each side without penalizing the tail's rest position.
+            tail_v = vertices_centered_scaled[i, tail_vertices_lst, :]
+            left_hind_sdf = RetNet._build_vertices_sdf(
                 frame_verts,
-                hind_vertices_lst,
+                left_hind_vertices_lst,
                 device,
                 grid_size=sdf_grid_size,
-                hull_spec=hind_hull,
+                hull_spec=left_hind_hull,
             )
-            if hind_sdf is not None:
-                rep_loss_tail_hind += RetNet._rep_loss_on_vertices(
-                    hind_sdf,
-                    vertices_centered_scaled[i, tail_vertices_lst, :],
+            right_hind_sdf = RetNet._build_vertices_sdf(
+                frame_verts,
+                right_hind_vertices_lst,
+                device,
+                grid_size=sdf_grid_size,
+                hull_spec=right_hind_hull,
+            )
+            phi_tail = torch.tensor(0.0, device=device)
+            if left_hind_sdf is not None:
+                phi_tail = phi_tail + RetNet._rep_loss_on_vertices(
+                    left_hind_sdf,
+                    tail_v,
                     RDF_THRESHOLD_TAIL_HIND,
                     device,
                     ifth,
                 )
+            if right_hind_sdf is not None:
+                phi_tail = phi_tail + RetNet._rep_loss_on_vertices(
+                    right_hind_sdf,
+                    tail_v,
+                    RDF_THRESHOLD_TAIL_HIND,
+                    device,
+                    ifth,
+                )
+            rep_loss_tail_hind += phi_tail
+
+            # Plan 2: tail vs torso+head. Once the tail lifts it can press onto
+            # the back/torso; penalize tail vertices penetrating the torso+head
+            # SDF (reuses total_sdf built above). Toggle via compute_tail_torso.
+            if compute_tail_torso:
+                rep_loss_tail_torso = rep_loss_tail_torso + RetNet._rep_loss_on_vertices(
+                    total_sdf,
+                    tail_v,
+                    RDF_THRESHOLD_TAIL_HIND,
+                    device,
+                    ifth,
+                )
+
+            # Plan A: directional "lift" prior + midplane soft preference.
+            # Pure SDF repulsion has no upward component (nearest hull exit is
+            # lateral/down). When the tail currently penetrates a hind leg:
+            #   - lift: pull tail vertices above the hind-leg top along +Y
+            #   - mid:  soft-penalize |tail_x - Root.X| so escape prefers the
+            #           body midplane over parking beside one leg
+            # Both share the penetration gate so mid does not fight natural
+            # wagging / stage-1 lateral pose when there is no collision.
+            if float(phi_tail.detach()) > 0 and hind_vertices_lst:
+                hind_top_y = (
+                    vertices_centered_scaled[i, hind_vertices_lst, 1].max().detach()
+                )
+                tail_lift = torch.relu(hind_top_y - tail_v[:, 1]).mean() * 1000.0
+                rep_loss_tail_lift = rep_loss_tail_lift + tail_lift
+                if tail_v.shape[0] > 0:
+                    tail_mid = torch.abs(tail_v[:, 0] - root_x[i]).mean() * 1000.0
+                    rep_loss_tail_mid = rep_loss_tail_mid + tail_mid
 
         return (
             rep_loss_lf / n_frames,
@@ -896,6 +1051,11 @@ class RetNet(nn.Module):
             rep_loss_lh / n_frames,
             rep_loss_rh / n_frames,
             rep_loss_tail_hind / n_frames,
+            rep_loss_tail_lift / n_frames,
+            rep_loss_tail_fold,
+            rep_loss_tail_torso / n_frames,
+            rep_loss_tail_taper,
+            rep_loss_tail_mid / n_frames,
         )
 
     @staticmethod
@@ -924,12 +1084,14 @@ class RetNet(nn.Module):
         vertices_lbs = linear_blend_skinning(
             parents, quatB_rt, rest_skelB, meshB, skinB_weights
         )
-        torso_hull = head_hull = hind_hull = None
+        torso_hull = head_hull = None
+        left_hind_hull = right_hind_hull = None
         if hull_cache is not None:
             hulls = hull_cache.get("hulls", {})
             torso_hull = hulls.get("torso")
             head_hull = hulls.get("head")
-            hind_hull = hulls.get("hind")
+            left_hind_hull = hulls.get("left_hind")
+            right_hind_hull = hulls.get("right_hind")
 
         scale_factor = 0.2
         boxes = get_bounding_boxes(vertices_lbs)
@@ -955,9 +1117,6 @@ class RetNet(nn.Module):
             "rep_tail_hind": 0.0,
         }
         pen_counts = {k: 0 for k in rep_sum}
-        hind_vertices_lst = list(left_hind_vertices_lst) + list(
-            right_hind_vertices_lst
-        )
 
         def _phi_scalar(total_sdf, verts, threshold, device):
             vert_num = verts.shape[0]
@@ -1027,23 +1186,34 @@ class RetNet(nn.Module):
             if phi_rh > RDF_THRESHOLD_HIND:
                 pen_counts["rep_rh"] += 1
 
-            hind_sdf = RetNet._build_vertices_sdf(
+            # Match training obstacle: tail vs per-leg hind hulls (plan C).
+            tail_v = vertices_centered_scaled[i, tail_vertices_lst, :]
+            left_hind_sdf = RetNet._build_vertices_sdf(
                 frame_verts,
-                hind_vertices_lst,
+                left_hind_vertices_lst,
                 device,
                 grid_size=sdf_grid_size,
-                hull_spec=hind_hull,
+                hull_spec=left_hind_hull,
             )
-            if hind_sdf is not None:
-                phi_tail = _phi_scalar(
-                    hind_sdf,
-                    vertices_centered_scaled[i, tail_vertices_lst, :],
-                    RDF_THRESHOLD_TAIL_HIND,
-                    device,
+            right_hind_sdf = RetNet._build_vertices_sdf(
+                frame_verts,
+                right_hind_vertices_lst,
+                device,
+                grid_size=sdf_grid_size,
+                hull_spec=right_hind_hull,
+            )
+            phi_tail = 0.0
+            if left_hind_sdf is not None:
+                phi_tail += _phi_scalar(
+                    left_hind_sdf, tail_v, RDF_THRESHOLD_TAIL_HIND, device
                 )
-                rep_sum["rep_tail_hind"] += phi_tail
-                if phi_tail > RDF_THRESHOLD_TAIL_HIND:
-                    pen_counts["rep_tail_hind"] += 1
+            if right_hind_sdf is not None:
+                phi_tail += _phi_scalar(
+                    right_hind_sdf, tail_v, RDF_THRESHOLD_TAIL_HIND, device
+                )
+            rep_sum["rep_tail_hind"] += phi_tail
+            if phi_tail > RDF_THRESHOLD_TAIL_HIND:
+                pen_counts["rep_tail_hind"] += 1
 
         stats = {k: v / n_frames for k, v in rep_sum.items()}
         stats["pen_rate_lf"] = pen_counts["rep_lf"] / n_frames
