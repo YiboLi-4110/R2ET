@@ -6,8 +6,10 @@ Consumes ``arp_sequence.npz`` + manifest produced by
 ``batch_arp_sequence_smal33.py``. Camera / floor / lighting knobs match the
 four-way compare LBS renderer.
 
-When ``render.simple_preview`` is true, skips floor and directional lights and
-uses flat ambient lighting so motion/skinning stay clear without heavy shadows.
+When ``render.simple_preview`` is true, skips the checker floor. Source clay is
+self-lit (emission). Retarget stays matte and is lifted with isotropic world
+lighting plus a small albedo emission — no directional lights, which faceted
+the textured mesh. The camera still sees the dark preview background.
 
 When ``render.show_source`` / manifest ``show_source`` is true, shows a Source
 skinned-mesh lane beside the retargeted result (fourway-style side-by-side).
@@ -207,8 +209,19 @@ def _parse_rgba(value, default=(0.08, 0.08, 0.08, 1.0)):
     return (vals[0], vals[1], vals[2], vals[3])
 
 
-def setup_simple_preview_world(bg_rgb=(0.92, 0.92, 0.92), strength=1.15):
-    """Flat ambient world background — no HDRI, no directional shading."""
+def setup_simple_preview_world(
+    bg_rgb=(0.92, 0.92, 0.92),
+    strength=1.15,
+    light_rgb=None,
+    light_strength=None,
+):
+    """
+    Visible background vs BSDF illumination.
+
+    Camera rays keep ``bg_rgb`` (so Source clay stays readable). Indirect /
+    lighting rays use a brighter env so textured retarget animals are not
+    crushed when the preview backdrop is dark.
+    """
     world = bpy.data.worlds.get("World")
     if world is None:
         world = bpy.data.worlds.new("World")
@@ -217,11 +230,35 @@ def setup_simple_preview_world(bg_rgb=(0.92, 0.92, 0.92), strength=1.15):
     nodes = world.node_tree.nodes
     links = world.node_tree.links
     nodes.clear()
-    bg = nodes.new(type="ShaderNodeBackground")
-    bg.inputs["Color"].default_value = (float(bg_rgb[0]), float(bg_rgb[1]), float(bg_rgb[2]), 1.0)
-    bg.inputs["Strength"].default_value = float(strength)
+    cam_bg = nodes.new(type="ShaderNodeBackground")
+    cam_bg.inputs["Color"].default_value = (
+        float(bg_rgb[0]),
+        float(bg_rgb[1]),
+        float(bg_rgb[2]),
+        1.0,
+    )
+    cam_bg.inputs["Strength"].default_value = float(strength)
     out = nodes.new(type="ShaderNodeOutputWorld")
-    links.new(bg.outputs["Background"], out.inputs["Surface"])
+    if light_rgb is None and light_strength is None:
+        links.new(cam_bg.outputs["Background"], out.inputs["Surface"])
+        return
+    lit_rgb = light_rgb if light_rgb is not None else (0.50, 0.50, 0.52)
+    lit_strength = 1.25 if light_strength is None else float(light_strength)
+    lit_bg = nodes.new(type="ShaderNodeBackground")
+    lit_bg.inputs["Color"].default_value = (
+        float(lit_rgb[0]),
+        float(lit_rgb[1]),
+        float(lit_rgb[2]),
+        1.0,
+    )
+    lit_bg.inputs["Strength"].default_value = float(lit_strength)
+    mix = nodes.new(type="ShaderNodeMixShader")
+    lp = nodes.new(type="ShaderNodeLightPath")
+    if "Is Camera Ray" in lp.outputs:
+        links.new(lp.outputs["Is Camera Ray"], mix.inputs["Fac"])
+    links.new(lit_bg.outputs["Background"], mix.inputs[1])
+    links.new(cam_bg.outputs["Background"], mix.inputs[2])
+    links.new(mix.outputs["Shader"], out.inputs["Surface"])
 
 
 def disable_scene_shadows(scene):
@@ -236,8 +273,22 @@ def disable_scene_shadows(scene):
         eevee.use_shadows = False
 
 
-def soften_object_materials(obj, roughness=0.9, specular=0.05):
-    """Reduce shiny specular response so ambient-lit meshes stay readable."""
+def _copy_color_socket(links, src_input, dst_input):
+    if src_input is None or dst_input is None:
+        return
+    for link in list(dst_input.links):
+        links.remove(link)
+    if getattr(src_input, "is_linked", False) and src_input.links:
+        links.new(src_input.links[0].from_socket, dst_input)
+        return
+    try:
+        dst_input.default_value = src_input.default_value
+    except Exception:
+        pass
+
+
+def soften_object_materials(obj, roughness=0.9, specular=0.05, emission_lift=0.0):
+    """Keep FBX fur readable under flat ambient: high roughness, optional lift."""
     for slot in obj.material_slots:
         mat = slot.material
         if mat is None or not getattr(mat, "use_nodes", False):
@@ -245,6 +296,7 @@ def soften_object_materials(obj, roughness=0.9, specular=0.05):
         bsdf = mat.node_tree.nodes.get("Principled BSDF")
         if bsdf is None:
             continue
+        links = mat.node_tree.links
         if "Roughness" in bsdf.inputs:
             bsdf.inputs["Roughness"].default_value = float(roughness)
         for key in ("Specular IOR Level", "Specular"):
@@ -254,6 +306,77 @@ def soften_object_materials(obj, roughness=0.9, specular=0.05):
                 except Exception:
                     pass
                 break
+        if emission_lift <= 1e-6:
+            continue
+        emit_color = None
+        for key in ("Emission Color", "Emission"):
+            if key in bsdf.inputs:
+                emit_color = bsdf.inputs[key]
+                break
+        emit_strength = (
+            bsdf.inputs["Emission Strength"]
+            if "Emission Strength" in bsdf.inputs
+            else None
+        )
+        base_color = bsdf.inputs["Base Color"] if "Base Color" in bsdf.inputs else None
+        if emit_color is None or emit_strength is None:
+            continue
+        _copy_color_socket(links, base_color, emit_color)
+        emit_strength.default_value = float(emission_lift)
+
+
+def _sun_rotation_from_dir(light_dir):
+    incoming = mathutils.Vector(
+        (float(light_dir[0]), float(light_dir[1]), float(light_dir[2]))
+    )
+    if incoming.length < 1e-8:
+        incoming = mathutils.Vector((0.32, -0.22, 0.92))
+    incoming.normalize()
+    return (-incoming).to_track_quat("-Z", "Y").to_euler()
+
+
+def add_simple_preview_retarget_lights(render_cfg):
+    """
+    Shadowless key/fill for Principled (retarget) meshes.
+
+    Source clay is emission, so these lights do not wash it out.
+    """
+    if not bool(render_cfg.get("simple_preview_retarget_lights", False)):
+        return
+    key_dir = _parse_vec3_cfg(
+        render_cfg.get("simple_preview_key_dir")
+        or render_cfg.get("source_key_light_dir"),
+        (0.32, -0.22, 0.92),
+    )
+    fill_dir = _parse_vec3_cfg(
+        render_cfg.get("simple_preview_fill_dir"),
+        (0.55, 0.35, 0.76),
+    )
+    key_energy = float(render_cfg.get("simple_preview_key_energy", 3.2))
+    fill_energy = float(render_cfg.get("simple_preview_fill_energy", 1.1))
+    key_color = _parse_rgb(render_cfg.get("simple_preview_key_color"), (1.0, 0.98, 0.94))
+    fill_color = _parse_rgb(render_cfg.get("simple_preview_fill_color"), (0.92, 0.94, 1.0))
+
+    def _add_sun(name, direction, energy, color):
+        bpy.ops.object.light_add(type="SUN", location=(0.0, 0.0, 6.0))
+        sun = bpy.context.object
+        sun.name = name
+        sun.data.energy = float(energy)
+        sun.data.color = (float(color[0]), float(color[1]), float(color[2]))
+        if hasattr(sun.data, "angle"):
+            try:
+                sun.data.angle = 0.40
+            except Exception:
+                pass
+        if hasattr(sun.data, "use_shadow"):
+            sun.data.use_shadow = False
+        sun.rotation_euler = _sun_rotation_from_dir(direction)
+        return sun
+
+    if key_energy > 1e-6:
+        _add_sun("preview_retarget_key", key_dir, key_energy, key_color)
+    if fill_energy > 1e-6:
+        _add_sun("preview_retarget_fill", fill_dir, fill_energy, fill_color)
 
 
 def make_emission_material(name, color, strength=1.0):
@@ -674,6 +797,37 @@ def apply_source_smooth_shading(obj):
         mesh.update()
 
 
+def apply_retarget_preview_shading(obj):
+    """
+    LBS overwrites FBX vertex positions; leftover custom/auto-smooth normals
+    then read as hard triangle facets under any directional lighting.
+    """
+    mesh = obj.data
+    for mod in list(obj.modifiers):
+        name_l = str(mod.name).lower()
+        if mod.type in {"WEIGHTED_NORMAL", "NORMAL_EDIT"} or "smooth by angle" in name_l:
+            try:
+                obj.modifiers.remove(mod)
+            except Exception:
+                pass
+    try:
+        if getattr(mesh, "has_custom_normals", False):
+            mesh.free_normals_split()
+    except Exception:
+        pass
+    if hasattr(mesh, "use_auto_smooth"):
+        mesh.use_auto_smooth = False
+    for poly in mesh.polygons:
+        poly.use_smooth = True
+    if hasattr(mesh, "calc_normals_split"):
+        try:
+            mesh.calc_normals_split()
+        except Exception:
+            pass
+    if hasattr(mesh, "update"):
+        mesh.update()
+
+
 def winding_corrected_faces(faces, axis_matrix):
     """
     ``y_up_to_z_up`` has det -1, which reverses triangle winding.
@@ -916,11 +1070,17 @@ def render_sequence(manifest: dict, args):
     clear_arp_sequence_handlers()
 
     if simple_preview:
+        light_rgb = render_cfg.get("simple_preview_light_rgb")
+        light_strength = render_cfg.get("simple_preview_light_strength")
         setup_simple_preview_world(
             bg_rgb=_parse_rgb(render_cfg.get("simple_preview_bg_rgb")),
             strength=float(render_cfg.get("simple_preview_world_strength", 1.15)),
+            light_rgb=_parse_rgb(light_rgb, (0.58, 0.58, 0.60)),
+            light_strength=float(
+                1.45 if light_strength is None else light_strength
+            ),
         )
-        # No floor / no SUN+AREA lights — ambient only.
+        add_simple_preview_retarget_lights(render_cfg)
     else:
         if bool(render_cfg.get("add_floor", True)):
             add_floor(
@@ -988,7 +1148,13 @@ def render_sequence(manifest: dict, args):
         obj = mesh_from_vertices(f"{sequence_id}_retarget", verts[0], faces, material)
 
     if simple_preview:
-        soften_object_materials(obj)
+        apply_retarget_preview_shading(obj)
+        soften_object_materials(
+            obj,
+            roughness=float(render_cfg.get("retarget_preview_roughness", 0.9)),
+            specular=float(render_cfg.get("retarget_preview_specular", 0.05)),
+            emission_lift=float(render_cfg.get("retarget_emission_lift", 0.22)),
+        )
 
     source_clip_objs = []
     source_frame_map = None

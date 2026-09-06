@@ -37,28 +37,30 @@ source:
     - Attack/Attack_F_IP.bvh
     - Attack/Attack_L_IP.bvh
     - Attack/Attack_R_IP.bvh
-    - Caress/Caress_idle_IP.bvh
-    - Co/Co_Hit_M_RM.bvh
     - Combat/Combat_start_IP.bvh
     - Combat/Combat_end_IP.bvh
-    - Defecate/Defecate_RM.bvh
     - EatDrink/EatDrink_start_RM.bvh
     - Drinking/Drinking_RM.bvh
     - EatDrink/EatDrink_end_RM.bvh
     - Crouch/Crouch_B_RM.bvh
     - Crouch/Crouch_BL_RM.bvh
     - Crouch/Crouch_BR_RM.bvh
+    - CrouchTurn/CrouchTurn_L_RM.bvh
+    - CrouchTurn/CrouchTurn_R_RM.bvh
     - Hit/Hit_B_RM.bvh
     - Hit/Hit_F_RM.bvh
     - Idle/Idle_2_RM.bvh
     - Idle/Idle_5_RM.bvh
     - Idle/Idle_6_RM.bvh
     - Idle/Idle_7_RM.bvh
+    - Co/Co_attack_F_RM.bvh
+    - Co/Co_attack_L_RM.bvh
+    - Co/Co_attack_R_RM.bvh
+    - Co/Co_Hit_M_RM.bvh
+    - Co/Co_Hit_F_RM.bvh
     - Crouch/Crouch_F_RM.bvh
     - Crouch/Crouch_L_RM.bvh
     - Crouch/Crouch_R_RM.bvh
-    - JumpFw/JumpFw_IP.bvh
-    - JumpPlace/JumpPlace_IP.bvh
     - JumpRun/JumpRun_IP.bvh
     - Run/Run_F_IP.bvh
     - Run/Run_L_IP.bvh
@@ -66,15 +68,7 @@ source:
     - CrouchIdle/CrouchIdle_loop_2_RM.bvh
     - CrouchIdle/CrouchIdle_end_RM.bvh
     - SharpenClaws/SharpenClaws_Horiz_RM.bvh
-    - SharpenClaws/SharpenClaws_Vert_RM.bvh
     - Sit/Sit_end_RM.bvh
-    - Swim/Swim_Enter_RM.bvh
-    - Swim/Swim_B_RM.bvh
-    - Swim/Swim_BL_RM.bvh
-    - Swim/Swim_BR_RM.bvh
-    - Swim/Swim_F_RM.bvh
-    - Swim/Swim_L_RM.bvh
-    - Swim/Swim_R_RM.bvh
     - Trot/Trot_F_IP.bvh
     - Trot/Trot_L_RM.bvh
     - Trot/Trot_R_RM.bvh
@@ -89,23 +83,30 @@ source:
     - Walk/Walk_F_RM.bvh
     - Walk/Walk_L_RM.bvh
     - Walk/Walk_R_RM.bvh
+    - Caress/Caress_idle_IP.bvh
+    - Defecate/Defecate_RM.bvh
 
 targets:
   # dog_id == previous CSV dog_id, e.g. 博美_3 / 边牧_4
   dog_ids:
-    - daju_2_daju
-    - daju_3_daju
-    - lihua_1_lihua
-    - lihua_4_lihua
-    - mianyin_1_mianyin
-    - mianyin_3_mianyin
-    - meiduan_1_meiduan
-    - meiduan_3_meiduan
-    - buou_1_buou
-    - buou_4_buou
+    - buou_hair_remesh0830
+    - daju_hair_remesh0830
+    - lihua_hair_remesh0830
+    - mianyin_hair_remesh0830
+    - meiduan_hair_remesh0830
+    # - daju_2_daju
+    # - daju_3_daju
+    # - lihua_1_lihua
+    # - lihua_4_lihua
+    # - mianyin_1_mianyin
+    # - mianyin_3_mianyin
+    # - meiduan_1_meiduan
+    # - meiduan_3_meiduan
+    # - buou_1_buou
+    # - buou_4_buou
   
-  char_root: ./datasets/shepherd/batch3_dogs/batch3_dogs_char
-  shape_root: ./datasets/shepherd/batch3_dogs/batch3_dogs_shape
+  char_root: ./datasets/shepherd/batch4_dogs/batch4_dogs_char
+  shape_root: ./datasets/shepherd/batch4_dogs/batch4_dogs_shape
 
 blend:
   # armature: keep FBX armature/mesh; bake from model-space fbx_bake.npz (same as LBS)
