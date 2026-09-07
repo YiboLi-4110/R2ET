@@ -1,6 +1,3 @@
-BLENDER=/home/lutianyi/Softwares/blender-4.5.3-linux-x64/blender
-# BLENDER=path_to_blender/blender-4.5.3-linux-x64/blender
-
 $BLENDER -b -P ./fbx2bvh_smal33.py -- \
   --data_path ./shepherd/smal@shepherd_dog/train_char \
   --max_cpu_cores 9 \

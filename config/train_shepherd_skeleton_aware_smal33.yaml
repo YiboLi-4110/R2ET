@@ -1,5 +1,5 @@
 # Stage-1 skeleton-aware training on smal@shepherd motion with batch2_dogs targets.
-work_dir: ./work_dir/train_smal@shepherd_batch3_dogs_skeleton_aware_smal33
+work_dir: ./work_dir/train_smal@shepherd_dog_batch_dogs_skeleton_aware_smal33
 phase: train
 alpha: 100.0
 mu: 10.0
@@ -16,16 +16,16 @@ num_workers: 8
 
 train_feeder_args:
   # Source motion: shepherd only
-  data_path: ./datasets/shepherd/smal@shepherd/train_q
+  data_path: ./datasets/shepherd/smal@shepherd_dog/train_q
   stats_path: ./datasets/shepherd/stats
-  shape_path: ./datasets/shepherd/smal@shepherd/train_shape
+  shape_path: ./datasets/shepherd/smal@shepherd_dog/train_shape
   max_length: 32
   # Shepherd has many clips <32 frames; see smal@shepherd_frame_stats.json
   min_frames: 12
   recompute_stats: false
   # Static target skeleton pool (rest pose, 2-frame BVH exports)
-  target_data_path: ./datasets/shepherd/batch3_dogs/batch3_dogs_q
-  target_shape_path: ./datasets/shepherd/batch3_dogs/batch3_dogs_shape
+  target_data_path: ./datasets/shepherd/batch_dogs/batch_dogs_q
+  target_shape_path: ./datasets/shepherd/batch_dogs/batch_dogs_shape
   target_min_frames: 2
   # Cross-retarget: prob. of picking target skel/shape from batch2_dogs vs smal@shepherd.
   # 0.0 = shepherd only, 1.0 = batch2_dogs only, 0.5 = mixed (default).

@@ -7,12 +7,12 @@
 #       * cross_external_target_prob: fraction of cross samples using batch2_dogs
 #       * 1 - cross_external_target_prob: fraction using another shepherd character
 # batch2_dogs has only 2-frame rest BVHs, so it cannot be used as motion source.
-work_dir: ./work_dir/train_smal@shepherd_batch3_dogs_shape_aware_smal33
-mesh_path: ./datasets/shepherd/smal@shepherd/train_shape/
+work_dir: ./work_dir/train_smal@shepherd_dog_batch_dogs_shape_aware_smal33
+mesh_path: ./datasets/shepherd/smal@shepherd_dog/train_shape/
 # Geometry loss (RDF/ATT) needs meshes for BOTH target types when cross_external_target_prob > 0.
 mesh_paths:
-  - ./datasets/shepherd/smal@shepherd/train_shape/
-  - ./datasets/shepherd/batch3_dogs/batch3_dogs_shape/
+  - ./datasets/shepherd/smal@shepherd_dog/train_shape/
+  - ./datasets/shepherd/batch_dogs/batch_dogs_shape/
 phase: train
 alpha: 100.0
 mu: 10.0
@@ -59,14 +59,14 @@ seed: 3
 num_workers: 8
 
 train_feeder_args:
-  data_path: ./datasets/shepherd/smal@shepherd/train_q
+  data_path: ./datasets/shepherd/smal@shepherd_dog/train_q
   stats_path: ./datasets/shepherd/stats
-  shape_path: ./datasets/shepherd/smal@shepherd/train_shape
+  shape_path: ./datasets/shepherd/smal@shepherd_dog/train_shape
   max_length: 32
   min_frames: 12
   recompute_stats: false
-  target_data_path: ./datasets/shepherd/batch3_dogs/batch3_dogs_q
-  target_shape_path: ./datasets/shepherd/batch3_dogs/batch3_dogs_shape
+  target_data_path: ./datasets/shepherd/batch_dogs/batch_dogs_q
+  target_shape_path: ./datasets/shepherd/batch_dogs/batch_dogs_shape
   target_min_frames: 2
   cross_external_target_prob: 0.75
 
@@ -95,6 +95,6 @@ batch_size: 16
 weight_decay: 0.0
 model_save_name: r2et_shepherd_shape_aware_smal33
 # Point to shepherd stage-1 checkpoints after skeleton training finishes.
-ret_weights: ./work_dir/train_smal@shepherd_batch3_dogs_skeleton_aware_smal33/r2et_shepherd_skeleton_aware_smal33_ret-118.pt
-dis_weights: ./work_dir/train_smal@shepherd_batch3_dogs_skeleton_aware_smal33/r2et_shepherd_skeleton_aware_smal33_dis-118.pt
+ret_weights: ./work_dir/train_smal@shepherd_dog_batch_dogs_skeleton_aware_smal33/r2et_shepherd_skeleton_aware_smal33_ret-118.pt
+dis_weights: ./work_dir/train_smal@shepherd_dog_batch_dogs_skeleton_aware_smal33/r2et_shepherd_skeleton_aware_smal33_dis-118.pt
 ignore_weights: []

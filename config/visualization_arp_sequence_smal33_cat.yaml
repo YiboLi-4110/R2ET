@@ -1,29 +1,6 @@
-# ARP / direct / R2ET multi-clip sequence render.
-# Keeps camera / floor / lighting knobs aligned with visualization_compare_smal33.yaml.
-#
-# Run ARP (server Blender 4.5.3):
-#   python visualization/batch_arp_sequence_smal33.py \
-#     --config config/visualization_arp_sequence_smal33_cat.yaml \
-#     --blender blender \
-#     --arp_addon_modules auto_rig_pro-master \
-#     --retarget_mode arp
-#
-# Run same-skeleton direct copy (no ARP addon):
-#   python visualization/batch_arp_sequence_smal33.py \
-#     --config config/visualization_arp_sequence_smal33_cat.yaml \
-#     --blender blender \
-#     --retarget_mode direct
-#
-# Run R2ET (stage1 / stage2 / blend; no ARP for mesh export):
-#   python visualization/batch_arp_sequence_smal33.py \
-#     --config config/visualization_arp_sequence_smal33_cat.yaml \
-#     --blender blender \
-#     --retarget_mode r2et \
-#     --stage2_mode stage1
-
 output_root: ./visualization/videos/arp_sequence
-sequence_id: batch4_buou_selected_cat_actions_demo_0
-device: 3
+sequence_id: batch_lihua_selected_cat_actions_demo
+device: 0
 
 camera:
   camera_zoom: 10.0
@@ -121,9 +98,6 @@ render:
   floor_rotation_deg: 30.0
 
 sequence:
-  # arp: Auto-Rig Pro remap (cross-skeleton / different bone axes OK)
-  # direct: CopyQuat same-skeleton (fourway-compatible; no Blender/ARP)
-  # r2et:   R2ET stage1/stage2/blend + LBS (needs source/target shape + weights)
   retarget_mode: arp
   # Side-by-side Source skinned mesh (fourway Source lane). Also: --show_source / --no_show_source
   show_source: false
@@ -147,7 +121,6 @@ motion:
   # already face +Z after shepherd_y_z_x (no extra yaw; leave 0 there).
   inp_axis_transform: shepherd_y_z_x # 如果使用游戏解包动作，替换为none
   inp_forward_mode: body # 如果使用游戏解包动作，替换为across
-  # inp_post_axis_yaw_deg: -90
   tgt_axis_transform: shepherd_y_z_x
   tgt_forward_mode: body
 
@@ -184,7 +157,7 @@ source:
 direct:
   # Target bind-pose mesh+skin weights (auto-resolves <bvh_stem>.npz if null).
   # LBS rest skeleton comes from this npz (canonicalized to +Z with BVH), not BVH alone.
-  shape_root: ./datasets/shepherd/batch4_dogs/batch4_dogs_shape
+  shape_root: ./datasets/shepherd/batch_dogs/batch_dogs_shape
   # Scale root translation by skeleton height ratio (same as fourway CopyQuat).
   scale_root_translation: true
   # Bake world locomotion onto the LBS mesh. Default was pose-only (in-place).
@@ -225,9 +198,9 @@ ret_model_args:
 
 model:
   # Used when stage2.mode == stage1 (pure skeleton-aware RetNet).
-  stage1_weights: ./work_dir/train_smal@shepherd_batch3_dogs_skeleton_aware_smal33/r2et_shepherd_skeleton_aware_smal33_ret-118.pt
+  stage1_weights: ./work_dir/train_smal@shepherd_cat_batch_dogs_skeleton_aware_smal33/r2et_shepherd_skeleton_aware_smal33_ret-0.pt
   # Used when stage2.mode in {stage2, blend} (shape-aware RetNet).
-  stage2_weights: ./work_dir/train_smal@shepherd_batch3_dogs_shape_aware_smal33/r2et_shepherd_shape_aware_smal33_ret-95.pt
+  stage2_weights: ./work_dir/train_smal@shepherd_cat_batch_dogs_shape_aware_smal33/r2et_shepherd_shape_aware_smal33_ret-0.pt
   stats_path: ./datasets/shepherd/stats
 
 # Inference (r2et mode only):
@@ -264,7 +237,7 @@ assets:
 
 # Single target SMAL33 character (batch2_dogs).
 target:
-  tgt_bvh_path: ./datasets/shepherd/batch4_dogs/batch4_dogs_char/buou/buou_hair_remesh0830-0.bvh
+  tgt_bvh_path: ./datasets/shepherd/batch_dogs/batch_dogs_char/lihua/lihua_hair_remesh0830-0.bvh
   # Optional; null resolves to same-stem .fbx next to the BVH.
   tgt_fbx_path: null
   # Optional for direct/CopyQuat/R2ET; null resolves via direct/r2et.shape_root/<bvh_stem>.npz
@@ -381,234 +354,3 @@ sources:
     inp_bvh_path: ./datasets/shepherd/cat_actions_sucaibao/train_char/Caress/Caress_idle_IP.bvh
   - clip_id: Defecate_RM
     inp_bvh_path: ./datasets/shepherd/cat_actions_sucaibao/train_char/Defecate/Defecate_RM.bvh
-
-
-  # 狗素材包当中挑选出的适配狗的源动作序列
-  # - clip_id: shepherd@Attack_J_smal_dog-foot_on_ground
-  #   inp_bvh_path: ./datasets/shepherd/smal@shepherd/train_char/shepherd@Attack/shepherd@Attack_J_smal_dog-foot_on_ground.bvh
-  # - clip_id: shepherd@Attack_L_smal_dog-foot_on_ground
-  #   inp_bvh_path: ./datasets/shepherd/smal@shepherd/train_char/shepherd@Attack/shepherd@Attack_L_smal_dog-foot_on_ground.bvh
-  # - clip_id: shepherd@Bark_smal_dog-foot_on_ground
-  #   inp_bvh_path: ./datasets/shepherd/smal@shepherd/train_char/shepherd@Bark/shepherd@Bark_smal_dog-foot_on_ground.bvh
-  # - clip_id: shepherd@Crouch_B_RM_smal_dog-foot_on_ground
-  #   inp_bvh_path: ./datasets/shepherd/smal@shepherd/train_char/shepherd@Crouch/shepherd@Crouch_B_RM_smal_dog-foot_on_ground.bvh
-  # - clip_id: shepherd@Crouch_BL_RM_smal_dog-foot_on_ground
-  #   inp_bvh_path: ./datasets/shepherd/smal@shepherd/train_char/shepherd@Crouch/shepherd@Crouch_BL_RM_smal_dog-foot_on_ground.bvh
-  # - clip_id: shepherd@Crouch_BR_RM_smal_dog-foot_on_ground
-  #   inp_bvh_path: ./datasets/shepherd/smal@shepherd/train_char/shepherd@Crouch/shepherd@Crouch_BR_RM_smal_dog-foot_on_ground.bvh
-  # - clip_id: shepherd@Crouch_F_RM_smal_dog-foot_on_ground
-  #   inp_bvh_path: ./datasets/shepherd/smal@shepherd/train_char/shepherd@Crouch/shepherd@Crouch_F_RM_smal_dog-foot_on_ground.bvh
-  # - clip_id: shepherd@Crouch_Idle_loop_2_smal_dog-foot_on_ground
-  #   inp_bvh_path: ./datasets/shepherd/smal@shepherd/train_char/shepherd@Crouch/shepherd@Crouch_Idle_loop_2_smal_dog-foot_on_ground.bvh
-  # - clip_id: shepherd@Crouch_R_RM_smal_dog-foot_on_ground
-  #   inp_bvh_path: ./datasets/shepherd/smal@shepherd/train_char/shepherd@Crouch/shepherd@Crouch_R_RM_smal_dog-foot_on_ground.bvh
-  # - clip_id: shepherd@Crouch_L_RM_smal_dog-foot_on_ground
-  #   inp_bvh_path: ./datasets/shepherd/smal@shepherd/train_char/shepherd@Crouch/shepherd@Crouch_L_RM_smal_dog-foot_on_ground.bvh
-  # - clip_id: shepherd@Digging_loop_smal_dog-foot_on_ground
-  #   inp_bvh_path: ./datasets/shepherd/smal@shepherd/train_char/shepherd@Digging/shepherd@Digging_loop_smal_dog-foot_on_ground.bvh
-  # - clip_id: shepherd@Drink_loop_smal_dog-foot_on_ground
-  #   inp_bvh_path: ./datasets/shepherd/smal@shepherd/train_char/shepherd@Drink/shepherd@Drink_loop_smal_dog-foot_on_ground.bvh
-  # - clip_id: shepherd@Eat_loop_smal_dog-foot_on_ground
-  #   inp_bvh_path: ./datasets/shepherd/smal@shepherd/train_char/shepherd@Eat/shepherd@Eat_loop_smal_dog-foot_on_ground.bvh
-  # - clip_id: shepherd@Eat_tear_smal_dog-foot_on_ground
-  #   inp_bvh_path: ./datasets/shepherd/smal@shepherd/train_char/shepherd@Eat/shepherd@Eat_tear_smal_dog-foot_on_ground.bvh
-  # - clip_id: shepherd@Hit_F_smal_dog-foot_on_ground
-  #   inp_bvh_path: ./datasets/shepherd/smal@shepherd/train_char/shepherd@Hit/shepherd@Hit_F_smal_dog-foot_on_ground.bvh
-  # - clip_id: shepherd@Hit_M_smal_dog-foot_on_ground
-  #   inp_bvh_path: ./datasets/shepherd/smal@shepherd/train_char/shepherd@Hit/shepherd@Hit_M_smal_dog-foot_on_ground.bvh
-  # - clip_id: shepherd@Idle_3_smal_dog-foot_on_ground
-  #   inp_bvh_path: ./datasets/shepherd/smal@shepherd/train_char/shepherd@Idle/shepherd@Idle_3_smal_dog-foot_on_ground.bvh
-  # - clip_id: shepherd@Idle_4_smal_dog-foot_on_ground
-  #   inp_bvh_path: ./datasets/shepherd/smal@shepherd/train_char/shepherd@Idle/shepherd@Idle_4_smal_dog-foot_on_ground.bvh
-  # - clip_id: shepherd@Idle_7_smal_dog-foot_on_ground
-  #   inp_bvh_path: ./datasets/shepherd/smal@shepherd/train_char/shepherd@Idle/shepherd@Idle_7_smal_dog-foot_on_ground.bvh
-  # - clip_id: shepherd@Jump_Place_RM_smal_dog-foot_on_ground
-  #   inp_bvh_path: ./datasets/shepherd/smal@shepherd/train_char/shepherd@Jump/shepherd@Jump_Place_RM_smal_dog-foot_on_ground.bvh
-  # - clip_id: shepherd@Jump_Run_RM_smal_dog-foot_on_ground
-  #   inp_bvh_path: ./datasets/shepherd/smal@shepherd/train_char/shepherd@Jump/shepherd@Jump_Run_RM_smal_dog-foot_on_ground.bvh
-  # - clip_id: shepherd@Pick_up_smal_dog-foot_on_ground
-  #   inp_bvh_path: ./datasets/shepherd/smal@shepherd/train_char/shepherd@Pick/shepherd@Pick_up_smal_dog-foot_on_ground.bvh
-  # - clip_id: shepherd@Run_F_RM_smal_dog-foot_on_ground
-  #   inp_bvh_path: ./datasets/shepherd/smal@shepherd/train_char/shepherd@Run/shepherd@Run_F_RM_smal_dog-foot_on_ground.bvh
-  # - clip_id: shepherd@Run_L_RM_smal_dog-foot_on_ground
-  #   inp_bvh_path: ./datasets/shepherd/smal@shepherd/train_char/shepherd@Run/shepherd@Run_L_RM_smal_dog-foot_on_ground.bvh
-  # - clip_id: shepherd@Run_R_RM_smal_dog-foot_on_ground
-  #   inp_bvh_path: ./datasets/shepherd/smal@shepherd/train_char/shepherd@Run/shepherd@Run_R_RM_smal_dog-foot_on_ground.bvh
-  # - clip_id: shepherd@Swim_B_RM_smal_dog-foot_on_ground
-  #   inp_bvh_path: ./datasets/shepherd/smal@shepherd/train_char/shepherd@Swim/shepherd@Swim_B_RM_smal_dog-foot_on_ground.bvh
-  # - clip_id: shepherd@Swim_BR_RM_smal_dog-foot_on_ground
-  #   inp_bvh_path: ./datasets/shepherd/smal@shepherd/train_char/shepherd@Swim/shepherd@Swim_BR_RM_smal_dog-foot_on_ground.bvh
-  # - clip_id: shepherd@Swim_BL_RM_smal_dog-foot_on_ground
-  #   inp_bvh_path: ./datasets/shepherd/smal@shepherd/train_char/shepherd@Swim/shepherd@Swim_BL_RM_smal_dog-foot_on_ground.bvh
-  # - clip_id: shepherd@Swim_F_RM_smal_dog-foot_on_ground
-  #   inp_bvh_path: ./datasets/shepherd/smal@shepherd/train_char/shepherd@Swim/shepherd@Swim_F_RM_smal_dog-foot_on_ground.bvh
-  # - clip_id: shepherd@Swim_L_RM_smal_dog-foot_on_ground
-  #   inp_bvh_path: ./datasets/shepherd/smal@shepherd/train_char/shepherd@Swim/shepherd@Swim_L_RM_smal_dog-foot_on_ground.bvh
-  # - clip_id: shepherd@Swim_R_RM_smal_dog-foot_on_ground
-  #   inp_bvh_path: ./datasets/shepherd/smal@shepherd/train_char/shepherd@Swim/shepherd@Swim_R_RM_smal_dog-foot_on_ground.bvh
-  # - clip_id: shepherd@Turn_R180_RM_smal_dog-foot_on_ground
-  #   inp_bvh_path: ./datasets/shepherd/smal@shepherd/train_char/shepherd@Turn/shepherd@Turn_R180_RM_smal_dog-foot_on_ground.bvh
-  # - clip_id: shepherd@Turn_L180_RM_smal_dog-foot_on_ground
-  #   inp_bvh_path: ./datasets/shepherd/smal@shepherd/train_char/shepherd@Turn/shepherd@Turn_L180_RM_smal_dog-foot_on_ground.bvh
-
-  # 狗素材包当中挑选出的适配猫的源动作序列
-  # - clip_id: shepherd@Attack_L_smal_dog-foot_on_ground
-  #   inp_bvh_path: ./datasets/shepherd/smal@shepherd/train_char/shepherd@Attack/shepherd@Attack_L_smal_dog-foot_on_ground.bvh
-  # - clip_id: shepherd@Crouch_B_RM_smal_dog-foot_on_ground
-  #   inp_bvh_path: ./datasets/shepherd/smal@shepherd/train_char/shepherd@Crouch/shepherd@Crouch_B_RM_smal_dog-foot_on_ground.bvh
-  # - clip_id: shepherd@Crouch_BL_RM_smal_dog-foot_on_ground
-  #   inp_bvh_path: ./datasets/shepherd/smal@shepherd/train_char/shepherd@Crouch/shepherd@Crouch_BL_RM_smal_dog-foot_on_ground.bvh
-  # - clip_id: shepherd@Crouch_BR_RM_smal_dog-foot_on_ground
-  #   inp_bvh_path: ./datasets/shepherd/smal@shepherd/train_char/shepherd@Crouch/shepherd@Crouch_BR_RM_smal_dog-foot_on_ground.bvh
-  # - clip_id: shepherd@Crouch_F_RM_smal_dog-foot_on_ground
-  #   inp_bvh_path: ./datasets/shepherd/smal@shepherd/train_char/shepherd@Crouch/shepherd@Crouch_F_RM_smal_dog-foot_on_ground.bvh
-  # - clip_id: shepherd@Crouch_Idle_loop_2_smal_dog-foot_on_ground
-  #   inp_bvh_path: ./datasets/shepherd/smal@shepherd/train_char/shepherd@Crouch/shepherd@Crouch_Idle_loop_2_smal_dog-foot_on_ground.bvh
-  # - clip_id: shepherd@Crouch_R_RM_smal_dog-foot_on_ground
-  #   inp_bvh_path: ./datasets/shepherd/smal@shepherd/train_char/shepherd@Crouch/shepherd@Crouch_R_RM_smal_dog-foot_on_ground.bvh
-  # - clip_id: shepherd@Crouch_L_RM_smal_dog-foot_on_ground
-  #   inp_bvh_path: ./datasets/shepherd/smal@shepherd/train_char/shepherd@Crouch/shepherd@Crouch_L_RM_smal_dog-foot_on_ground.bvh
-  # - clip_id: shepherd@Digging_loop_smal_dog-foot_on_ground
-  #   inp_bvh_path: ./datasets/shepherd/smal@shepherd/train_char/shepherd@Digging/shepherd@Digging_loop_smal_dog-foot_on_ground.bvh
-  # - clip_id: shepherd@Drink_loop_smal_dog-foot_on_ground
-  #   inp_bvh_path: ./datasets/shepherd/smal@shepherd/train_char/shepherd@Drink/shepherd@Drink_loop_smal_dog-foot_on_ground.bvh
-  # - clip_id: shepherd@Eat_loop_smal_dog-foot_on_ground
-  #   inp_bvh_path: ./datasets/shepherd/smal@shepherd/train_char/shepherd@Eat/shepherd@Eat_loop_smal_dog-foot_on_ground.bvh
-  # - clip_id: shepherd@Eat_tear_smal_dog-foot_on_ground
-  #   inp_bvh_path: ./datasets/shepherd/smal@shepherd/train_char/shepherd@Eat/shepherd@Eat_tear_smal_dog-foot_on_ground.bvh
-  # - clip_id: shepherd@Idle_3_smal_dog-foot_on_ground
-  #   inp_bvh_path: ./datasets/shepherd/smal@shepherd/train_char/shepherd@Idle/shepherd@Idle_3_smal_dog-foot_on_ground.bvh
-  # - clip_id: shepherd@Idle_4_smal_dog-foot_on_ground
-  #   inp_bvh_path: ./datasets/shepherd/smal@shepherd/train_char/shepherd@Idle/shepherd@Idle_4_smal_dog-foot_on_ground.bvh
-  # - clip_id: shepherd@Idle_6_smal_dog-foot_on_ground
-  #   inp_bvh_path: ./datasets/shepherd/smal@shepherd/train_char/shepherd@Idle/shepherd@Idle_6_smal_dog-foot_on_ground.bvh
-  # - clip_id: shepherd@Idle_7_smal_dog-foot_on_ground
-  #   inp_bvh_path: ./datasets/shepherd/smal@shepherd/train_char/shepherd@Idle/shepherd@Idle_7_smal_dog-foot_on_ground.bvh
-  # - clip_id: shepherd@Jump_Place_RM_smal_dog-foot_on_ground
-  #   inp_bvh_path: ./datasets/shepherd/smal@shepherd/train_char/shepherd@Jump/shepherd@Jump_Place_RM_smal_dog-foot_on_ground.bvh
-  # - clip_id: shepherd@Jump_Run_RM_smal_dog-foot_on_ground
-  #   inp_bvh_path: ./datasets/shepherd/smal@shepherd/train_char/shepherd@Jump/shepherd@Jump_Run_RM_smal_dog-foot_on_ground.bvh
-  # - clip_id: shepherd@Put_down_smal_dog-foot_on_ground
-  #   inp_bvh_path: ./datasets/shepherd/smal@shepherd/train_char/shepherd@Put/shepherd@Put_down_smal_dog-foot_on_ground.bvh
-  # - clip_id: shepherd@Run_F_RM_smal_dog-foot_on_ground
-  #   inp_bvh_path: ./datasets/shepherd/smal@shepherd/train_char/shepherd@Run/shepherd@Run_F_RM_smal_dog-foot_on_ground.bvh
-  # - clip_id: shepherd@Run_L_RM_smal_dog-foot_on_ground
-  #   inp_bvh_path: ./datasets/shepherd/smal@shepherd/train_char/shepherd@Run/shepherd@Run_L_RM_smal_dog-foot_on_ground.bvh
-  # - clip_id: shepherd@Run_R_RM_smal_dog-foot_on_ground
-  #   inp_bvh_path: ./datasets/shepherd/smal@shepherd/train_char/shepherd@Run/shepherd@Run_R_RM_smal_dog-foot_on_ground.bvh
-  # - clip_id: shepherd@Swim_B_RM_smal_dog-foot_on_ground
-  #   inp_bvh_path: ./datasets/shepherd/smal@shepherd/train_char/shepherd@Swim/shepherd@Swim_B_RM_smal_dog-foot_on_ground.bvh
-  # - clip_id: shepherd@Swim_BR_RM_smal_dog-foot_on_ground
-  #   inp_bvh_path: ./datasets/shepherd/smal@shepherd/train_char/shepherd@Swim/shepherd@Swim_BR_RM_smal_dog-foot_on_ground.bvh
-  # - clip_id: shepherd@Swim_BL_RM_smal_dog-foot_on_ground
-  #   inp_bvh_path: ./datasets/shepherd/smal@shepherd/train_char/shepherd@Swim/shepherd@Swim_BL_RM_smal_dog-foot_on_ground.bvh
-  # - clip_id: shepherd@Swim_F_RM_smal_dog-foot_on_ground
-  #   inp_bvh_path: ./datasets/shepherd/smal@shepherd/train_char/shepherd@Swim/shepherd@Swim_F_RM_smal_dog-foot_on_ground.bvh
-  # - clip_id: shepherd@Swim_L_RM_smal_dog-foot_on_ground
-  #   inp_bvh_path: ./datasets/shepherd/smal@shepherd/train_char/shepherd@Swim/shepherd@Swim_L_RM_smal_dog-foot_on_ground.bvh
-  # - clip_id: shepherd@Swim_R_RM_smal_dog-foot_on_ground
-  #   inp_bvh_path: ./datasets/shepherd/smal@shepherd/train_char/shepherd@Swim/shepherd@Swim_R_RM_smal_dog-foot_on_ground.bvh
-  # - clip_id: shepherd@Turn_R180_RM_smal_dog-foot_on_ground
-  #   inp_bvh_path: ./datasets/shepherd/smal@shepherd/train_char/shepherd@Turn/shepherd@Turn_R180_RM_smal_dog-foot_on_ground.bvh
-  # - clip_id: shepherd@Turn_L180_RM_smal_dog-foot_on_ground
-  #   inp_bvh_path: ./datasets/shepherd/smal@shepherd/train_char/shepherd@Turn/shepherd@Turn_L180_RM_smal_dog-foot_on_ground.bvh
-  # - clip_id: sand_cat_female@matingritual
-  #   inp_bvh_path: ./datasets/shepherd/cat_actions/train_char/sand_cat_female/sand_cat_female@matingritual.bvh
-  # - clip_id: sand_cat_juvenile@deepswim02
-  #   inp_bvh_path: ./datasets/shepherd/cat_actions/train_char/sand_cat_juvenile/sand_cat_juvenile@deepswim02_smal.bvh
-  # - clip_id: sand_cat_juvenile@deepswimvariant
-  #   inp_bvh_path: ./datasets/shepherd/cat_actions/train_char/sand_cat_juvenile/sand_cat_juvenile@deepswimvariant.bvh
-  # - clip_id: sand_cat_juvenile@enrichmentlinefeeder
-  #   inp_bvh_path: ./datasets/shepherd/cat_actions/train_char/sand_cat_juvenile/sand_cat_juvenile@enrichmentlinefeeder.bvh
-  # - clip_id: sand_cat_juvenile@enrichmentscratchingpost
-  #   inp_bvh_path: ./datasets/shepherd/cat_actions/train_char/sand_cat_juvenile/sand_cat_juvenile@enrichmentscratchingpost.bvh
-  # - clip_id: sand_cat_juvenile@interactjuvenileb
-  #   inp_bvh_path: ./datasets/shepherd/cat_actions/train_char/sand_cat_juvenile/sand_cat_juvenile@interactjuvenileb.bvh
-  # - clip_id: sand_cat_juvenile@jump5m
-  #   inp_bvh_path: ./datasets/shepherd/cat_actions/train_char/sand_cat_juvenile/sand_cat_juvenile@jump5m.bvh
-  # - clip_id: sand_cat_juvenile@pouncestalk
-  #   inp_bvh_path: ./datasets/shepherd/cat_actions/train_char/sand_cat_juvenile/sand_cat_juvenile@pouncestalk.bvh
-  # - clip_id: sand_cat_juvenile@standturnl090
-  #   inp_bvh_path: ./datasets/shepherd/cat_actions/train_char/sand_cat_juvenile/sand_cat_juvenile@standturnl090.bvh
-  # - clip_id: sand_cat_juvenile@standturnr090
-  #   inp_bvh_path: ./datasets/shepherd/cat_actions/train_char/sand_cat_juvenile/sand_cat_juvenile@standturnr090.bvh
-  # - clip_id: sand_cat_juvenile@swimturnl180
-  #   inp_bvh_path: ./datasets/shepherd/cat_actions/train_char/sand_cat_juvenile/sand_cat_juvenile@swimturnl180.bvh
-  # - clip_id: sand_cat_juvenile@swimturnr180
-  #   inp_bvh_path: ./datasets/shepherd/cat_actions/train_char/sand_cat_juvenile/sand_cat_juvenile@swimturnr180.bvh
-  # - clip_id: eurasian_lynx_male@matingritual
-  #   inp_bvh_path: ./datasets/shepherd/cat_actions/train_char/eurasian_lynx_male/eurasian_lynx_male@matingritual.bvh
-  # - clip_id: fennec_fox_female@discoballenrichment
-  #   inp_bvh_path: ./datasets/shepherd/cat_actions/train_char/fennec_fox_female/fennec_fox_female@discoballenrichment.bvh
-  # - clip_id: fennec_fox_female@gimmick01
-  #   inp_bvh_path: ./datasets/shepherd/cat_actions/train_char/fennec_fox_female/fennec_fox_female@gimmick01.bvh
-  # - clip_id: fennec_fox_juvenile@interactjuvenilea
-  #   inp_bvh_path: ./datasets/shepherd/cat_actions/train_char/fennec_fox_juvenile/fennec_fox_juvenile@interactjuvenilea.bvh
-  # - clip_id: pallas_cat_juvenile@interactjuvenilea
-  #   inp_bvh_path: ./datasets/shepherd/cat_actions/train_char/pallas_cat_juvenile/pallas_cat_juvenile@interactjuvenilea.bvh
-  # - clip_id: pallas_cat_juvenile@interactjuvenilea
-  #   inp_bvh_path: ./datasets/shepherd/cat_actions/train_char/pallas_cat_juvenile/pallas_cat_juvenile@interactjuvenilea.bvh
-
-
-  # 游戏解包挑选出的源动作：
-  # # Active sources: sand_cat_juvenile SMAL BVHs (appended; do not remove comments above).
-  # - clip_id: sand_cat_juvenile@climbbeam
-  #   inp_bvh_path: ./datasets/Planet_Zoo_FBX-smal2/train_char/sand_cat_juvenile/sand_cat_juvenile@climbbeam.bvh
-  # - clip_id: sand_cat_juvenile@climbbeamtoclimbup1
-  #   inp_bvh_path: ./datasets/Planet_Zoo_FBX-smal2/train_char/sand_cat_juvenile/sand_cat_juvenile@climbbeamtoclimbup1.bvh
-  # - clip_id: sand_cat_juvenile@climbbeamtowalk1
-  #   inp_bvh_path: ./datasets/Planet_Zoo_FBX-smal2/train_char/sand_cat_juvenile/sand_cat_juvenile@climbbeamtowalk1.bvh
-  # # ok - clip_id: sand_cat_juvenile@climbidletoclimbbeam
-  # # ok   inp_bvh_path: ./datasets/Planet_Zoo_FBX-smal2/train_char/sand_cat_juvenile/sand_cat_juvenile@climbidletoclimbbeam.bvh
-  # - clip_id: sand_cat_juvenile@climbuptoclimbbeam2
-  #   inp_bvh_path: ./datasets/Planet_Zoo_FBX-smal2/train_char/sand_cat_juvenile/sand_cat_juvenile@climbuptoclimbbeam2.bvh
-  # - clip_id: sand_cat_juvenile@deepswim01
-  #   inp_bvh_path: ./datasets/Planet_Zoo_FBX-smal2/train_char/sand_cat_juvenile/sand_cat_juvenile@deepswim01.bvh
-  # - clip_id: sand_cat_juvenile@deepswim02
-  #   inp_bvh_path: ./datasets/Planet_Zoo_FBX-smal2/train_char/sand_cat_juvenile/sand_cat_juvenile@deepswim02.bvh
-  # # ok - clip_id: sand_cat_juvenile@deepswim04
-  # # ok   inp_bvh_path: ./datasets/Planet_Zoo_FBX-smal2/train_char/sand_cat_juvenile/sand_cat_juvenile@deepswim04.bvh
-  # - clip_id: sand_cat_juvenile@deepswimdiveout
-  #   inp_bvh_path: ./datasets/Planet_Zoo_FBX-smal2/train_char/sand_cat_juvenile/sand_cat_juvenile@deepswimdiveout.bvh
-  # - clip_id: sand_cat_juvenile@deepswimvariant
-  #   inp_bvh_path: ./datasets/Planet_Zoo_FBX-smal2/train_char/sand_cat_juvenile/sand_cat_juvenile@deepswimvariant.bvh
-  # # ok - clip_id: sand_cat_juvenile@enrichmentlinefeeder
-  # # ok   inp_bvh_path: ./datasets/Planet_Zoo_FBX-smal2/train_char/sand_cat_juvenile/sand_cat_juvenile@enrichmentlinefeeder.bvh
-  # - clip_id: sand_cat_juvenile@enrichmentscratchingpost
-  #   inp_bvh_path: ./datasets/Planet_Zoo_FBX-smal2/train_char/sand_cat_juvenile/sand_cat_juvenile@enrichmentscratchingpost.bvh
-  # - clip_id: sand_cat_juvenile@fightreacttofendoff
-  #   inp_bvh_path: ./datasets/Planet_Zoo_FBX-smal2/train_char/sand_cat_juvenile/sand_cat_juvenile@fightreacttofendoff.bvh
-  # - clip_id: sand_cat_juvenile@fighttaunttostand
-  #   inp_bvh_path: ./datasets/Planet_Zoo_FBX-smal2/train_char/sand_cat_juvenile/sand_cat_juvenile@fighttaunttostand.bvh
-  # - clip_id: sand_cat_juvenile@interactadult_a
-  #   inp_bvh_path: ./datasets/Planet_Zoo_FBX-smal2/train_char/sand_cat_juvenile/sand_cat_juvenile@interactadult_a.bvh
-  # # ok - clip_id: sand_cat_juvenile@interactadult_b
-  # # ok   inp_bvh_path: ./datasets/Planet_Zoo_FBX-smal2/train_char/sand_cat_juvenile/sand_cat_juvenile@interactadult_b.bvh
-  # - clip_id: sand_cat_juvenile@jumpdown1x5m
-  #   inp_bvh_path: ./datasets/Planet_Zoo_FBX-smal2/train_char/sand_cat_juvenile/sand_cat_juvenile@jumpdown1x5m.bvh
-  # - clip_id: sand_cat_juvenile@matingritual
-  #   inp_bvh_path: ./datasets/Planet_Zoo_FBX-smal2/train_char/sand_cat_juvenile/sand_cat_juvenile@matingritual.bvh
-  # - clip_id: sand_cat_juvenile@runtostand
-  #   inp_bvh_path: ./datasets/Planet_Zoo_FBX-smal2/train_char/sand_cat_juvenile/sand_cat_juvenile@runtostand.bvh
-  # - clip_id: sand_cat_juvenile@runtowalkturnl
-  #   inp_bvh_path: ./datasets/Planet_Zoo_FBX-smal2/train_char/sand_cat_juvenile/sand_cat_juvenile@runtowalkturnl.bvh
-  # - clip_id: sand_cat_juvenile@runtowalkturnr
-  #   inp_bvh_path: ./datasets/Planet_Zoo_FBX-smal2/train_char/sand_cat_juvenile/sand_cat_juvenile@runtowalkturnr.bvh
-  # - clip_id: sand_cat_juvenile@standturnl090
-  #   inp_bvh_path: ./datasets/Planet_Zoo_FBX-smal2/train_char/sand_cat_juvenile/sand_cat_juvenile@standturnl090.bvh
-  # # ok - clip_id: sand_cat_juvenile@standturnr090
-  # # ok   inp_bvh_path: ./datasets/Planet_Zoo_FBX-smal2/train_char/sand_cat_juvenile/sand_cat_juvenile@standturnr090.bvh
-  # - clip_id: sand_cat_juvenile@standturnr180
-  #   inp_bvh_path: ./datasets/Planet_Zoo_FBX-smal2/train_char/sand_cat_juvenile/sand_cat_juvenile@standturnr180.bvh
-  # - clip_id: sand_cat_juvenile@swimtowalk
-  #   inp_bvh_path: ./datasets/Planet_Zoo_FBX-smal2/train_char/sand_cat_juvenile/sand_cat_juvenile@swimtowalk.bvh
-  # - clip_id: sand_cat_juvenile@swimturnl180
-  #   inp_bvh_path: ./datasets/Planet_Zoo_FBX-smal2/train_char/sand_cat_juvenile/sand_cat_juvenile@swimturnl180.bvh
-  # - clip_id: sand_cat_juvenile@swimturnr180
-  #   inp_bvh_path: ./datasets/Planet_Zoo_FBX-smal2/train_char/sand_cat_juvenile/sand_cat_juvenile@swimturnr180.bvh
-  # # ok - clip_id: sand_cat_juvenile@walktoclimbbeam2
-  # # ok   inp_bvh_path: ./datasets/Planet_Zoo_FBX-smal2/train_char/sand_cat_juvenile/sand_cat_juvenile@walktoclimbbeam2.bvh
-  # - clip_id: sand_cat_juvenile@walktodrinktrough
-  #   inp_bvh_path: ./datasets/Planet_Zoo_FBX-smal2/train_char/sand_cat_juvenile/sand_cat_juvenile@walktodrinktrough.bvh
-  # - clip_id: sand_cat_juvenile@walktoeat
-  #   inp_bvh_path: ./datasets/Planet_Zoo_FBX-smal2/train_char/sand_cat_juvenile/sand_cat_juvenile@walktoeat.bvh
