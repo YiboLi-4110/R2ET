@@ -1,0 +1,45 @@
+Planet Zoo cleaned (def_* armature) -> SMAL33 ARP remap
+Preset file: planetzoo_def_to_smal33.bmap
+
+Ignored on purpose:
+  - srb hierarchy
+  - face / ear / tongue / whisker helpers
+  - twist helpers (*Twist*)
+  - toes / claws
+  - def_c_chestBreath_joint, def_c_anus_joint
+  - front horselink (wrist) -- SMAL front chain has only 4 bones;
+    rear horselink IS mapped to Hock (rear chain is 4-to-4)
+
+SMAL33 target          Source bone
+---------------------  --------------------------------
+smal:Root              def_c_root_joint          (root / ABSOLUTE)
+smal:Spine1            def_c_hips_joint
+smal:Spine2            def_c_spine1_joint
+smal:Spine3            def_c_spine2_joint
+smal:Spine4            def_c_spine3_joint
+smal:Spine5            def_c_chest_joint
+smal:Spine6            def_c_chest_joint         (duplicate; source has fewer spine bones)
+smal:LeftScapula       def_clavicle_joint.L
+smal:LeftUpperArm      def_frontLegUpr_joint.L
+smal:LeftForeLeg       def_frontLegLwr_joint.L
+smal:LeftFrontPaw      def_frontFoot_joint.L
+smal:RightScapula      def_clavicle_joint.R
+smal:RightUpperArm     def_frontLegUpr_joint.R
+smal:RightForeLeg      def_frontLegLwr_joint.R
+smal:RightFrontPaw     def_frontFoot_joint.R
+smal:Neck              def_c_neck1_joint         (neck2 unused)
+smal:Head              def_c_head_joint
+smal:Jaw               def_c_jaw_joint
+smal:LeftThigh         def_rearLegUpr_joint.L
+smal:LeftShin          def_rearLegLwr_joint.L
+smal:LeftHock          def_rearHorselink_joint.L
+smal:LeftHindPaw       def_rearFoot_joint.L
+smal:RightThigh        def_rearLegUpr_joint.R
+smal:RightShin         def_rearLegLwr_joint.R
+smal:RightHock         def_rearHorselink_joint.R
+smal:RightHindPaw      def_rearFoot_joint.R
+smal:Tail1..Tail7      def_c_tail1_joint .. def_c_tail7_joint
+
+If front wrists look stiff after retarget, try remapping
+  Left/RightFrontPaw -> def_frontHorselink_joint.L/R
+in Blender ARP Remap UI, then re-export the .bmap.

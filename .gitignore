@@ -1,14 +1,9 @@
 **/.DS_Store
 .vscode
 save/
-visualization/bvh_files/
-visualization/skin/
 visualization/videos/
 visualization/blend*/
-visualization/arp_presets*
 visualization/visualize_self.sh
-outside-code/sdf/build
-outside-code/sdf/sdf_pytorch.egg-info
 **/__pycache__
 datasets/Planet_Zoo_FBX-smal2
 datasets/Planet_Zoo_FBX-cleaned
@@ -18,10 +13,8 @@ datasets/shepherd
 datasets/*.json
 work_dir/
 temp/
-datasets/*.sh
 .cursorignore
 *.log
 *.bvh
 *.npz
 *.npy
-*.sh
