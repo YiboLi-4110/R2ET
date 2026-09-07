@@ -3,8 +3,8 @@ blend_output_dir: ./visualization/blend_retarget_results
 device: 0
 
 source:
-  train_char: ./datasets/shepherd/cat_actions_sucaibao/train_char
-  train_shape: ./datasets/shepherd/cat_actions_sucaibao/train_shape
+  train_char: ./datasets/shepherd/smal@shepherd_cat/train_char
+  train_shape: ./datasets/shepherd/smal@shepherd_cat/train_shape
   prefer_bvh: true
   # Skip source BVH clips shorter than this (inclusive threshold). 0 = keep all.
   # Only used in scan mode (when `actions` below is empty / omitted).
@@ -23,56 +23,56 @@ source:
     - Attack/Attack_Crouch_IP.bvh
     - Attack/Attack_down_IP.bvh
     - Attack/Attack_F_IP.bvh
-    # - Attack/Attack_L_IP.bvh
-    # - Attack/Attack_R_IP.bvh
-    # - Combat/Combat_start_IP.bvh
-    # - Combat/Combat_end_IP.bvh
-    # - EatDrink/EatDrink_start_RM.bvh
-    # - Drinking/Drinking_RM.bvh
-    # - EatDrink/EatDrink_end_RM.bvh
-    # - Crouch/Crouch_B_RM.bvh
-    # - Crouch/Crouch_BL_RM.bvh
-    # - Crouch/Crouch_BR_RM.bvh
-    # - CrouchTurn/CrouchTurn_L_RM.bvh
-    # - CrouchTurn/CrouchTurn_R_RM.bvh
-    # - Hit/Hit_B_RM.bvh
-    # - Hit/Hit_F_RM.bvh
-    # - Idle/Idle_2_RM.bvh
-    # - Idle/Idle_5_RM.bvh
-    # - Idle/Idle_6_RM.bvh
-    # - Idle/Idle_7_RM.bvh
-    # - Co/Co_attack_F_RM.bvh
-    # - Co/Co_attack_L_RM.bvh
-    # - Co/Co_attack_R_RM.bvh
-    # - Co/Co_Hit_M_RM.bvh
-    # - Co/Co_Hit_F_RM.bvh
-    # - Crouch/Crouch_F_RM.bvh
-    # - Crouch/Crouch_L_RM.bvh
-    # - Crouch/Crouch_R_RM.bvh
-    # - JumpRun/JumpRun_IP.bvh
-    # - Run/Run_F_IP.bvh
-    # - Run/Run_L_IP.bvh
-    # - Run/Run_R_IP.bvh
-    # - CrouchIdle/CrouchIdle_loop_2_RM.bvh
-    # - CrouchIdle/CrouchIdle_end_RM.bvh
-    # - SharpenClaws/SharpenClaws_Horiz_RM.bvh
-    # - Sit/Sit_end_RM.bvh
-    # - Trot/Trot_F_IP.bvh
-    # - Trot/Trot_L_RM.bvh
-    # - Trot/Trot_R_RM.bvh
-    # - Turn/Turn_L_RM.bvh
-    # - Turn/Turn_R_RM.bvh
-    # - Turn180/Turn180_L_RM.bvh
-    # - Turn180/Turn180_R_RM.bvh
-    # - Eating/Eating_RM.bvh
-    # - Walk/Walk_B_RM.bvh
-    # - Walk/Walk_BL_RM.bvh
-    # - Walk/Walk_BR_RM.bvh
-    # - Walk/Walk_F_RM.bvh
-    # - Walk/Walk_L_RM.bvh
-    # - Walk/Walk_R_RM.bvh
-    # - Caress/Caress_idle_IP.bvh
-    # - Defecate/Defecate_RM.bvh
+    - Attack/Attack_L_IP.bvh
+    - Attack/Attack_R_IP.bvh
+    - Combat/Combat_start_IP.bvh
+    - Combat/Combat_end_IP.bvh
+    - EatDrink/EatDrink_start_RM.bvh
+    - Drinking/Drinking_RM.bvh
+    - EatDrink/EatDrink_end_RM.bvh
+    - Crouch/Crouch_B_RM.bvh
+    - Crouch/Crouch_BL_RM.bvh
+    - Crouch/Crouch_BR_RM.bvh
+    - CrouchTurn/CrouchTurn_L_RM.bvh
+    - CrouchTurn/CrouchTurn_R_RM.bvh
+    - Hit/Hit_B_RM.bvh
+    - Hit/Hit_F_RM.bvh
+    - Idle/Idle_2_RM.bvh
+    - Idle/Idle_5_RM.bvh
+    - Idle/Idle_6_RM.bvh
+    - Idle/Idle_7_RM.bvh
+    - Co/Co_attack_F_RM.bvh
+    - Co/Co_attack_L_RM.bvh
+    - Co/Co_attack_R_RM.bvh
+    - Co/Co_Hit_M_RM.bvh
+    - Co/Co_Hit_F_RM.bvh
+    - Crouch/Crouch_F_RM.bvh
+    - Crouch/Crouch_L_RM.bvh
+    - Crouch/Crouch_R_RM.bvh
+    - JumpRun/JumpRun_IP.bvh
+    - Run/Run_F_IP.bvh
+    - Run/Run_L_IP.bvh
+    - Run/Run_R_IP.bvh
+    - CrouchIdle/CrouchIdle_loop_2_RM.bvh
+    - CrouchIdle/CrouchIdle_end_RM.bvh
+    - SharpenClaws/SharpenClaws_Horiz_RM.bvh
+    - Sit/Sit_end_RM.bvh
+    - Trot/Trot_F_IP.bvh
+    - Trot/Trot_L_RM.bvh
+    - Trot/Trot_R_RM.bvh
+    - Turn/Turn_L_RM.bvh
+    - Turn/Turn_R_RM.bvh
+    - Turn180/Turn180_L_RM.bvh
+    - Turn180/Turn180_R_RM.bvh
+    - Eating/Eating_RM.bvh
+    - Walk/Walk_B_RM.bvh
+    - Walk/Walk_BL_RM.bvh
+    - Walk/Walk_BR_RM.bvh
+    - Walk/Walk_F_RM.bvh
+    - Walk/Walk_L_RM.bvh
+    - Walk/Walk_R_RM.bvh
+    - Caress/Caress_idle_IP.bvh
+    - Defecate/Defecate_RM.bvh
 
 targets:
   dog_ids:
@@ -106,7 +106,7 @@ blend:
   lbs_global_yaw_deg: 0.0
   animation_mode: shapekeys
 
-retarget_mode: arp # 还可以填写direct/r2et
+retarget_mode: r2et # 还可以填写direct/arp
 
 # Inference still uses shepherd model coordinates.
 motion:
@@ -126,10 +126,10 @@ ret_model_args:
 model:
   # Used when stage2.mode == stage1 (pure skeleton-aware RetNet).
   # stage1_weights: ./work_dir/train_shepherd_skeleton_aware_smal33_1/r2et_shepherd_skeleton_aware_smal33_ret-94.pt
-  stage1_weights: ./work_dir/train_smal@shepherd_cat_batch_dogs_skeleton_aware_smal33/r2et_shepherd_skeleton_aware_smal33_ret-0.pt
+  stage1_weights: ./work_dir/train_smal@shepherd_cat_batch_dogs_skeleton_aware_smal33/r2et_shepherd_skeleton_aware_smal33_ret-106.pt
   # Used when stage2.mode in {stage2, blend} (shape-aware RetNet).
   stage2_weights: ./work_dir/train_smal@shepherd_cat_batch_dogs_shape_aware_smal33/r2et_shepherd_shape_aware_smal33_ret-0.pt
-  stats_path: ./datasets/shepherd/stats
+  stats_path: ./datasets/shepherd/stats_cat
 
 # Inference (retarget_mode=r2et only; ignored for direct/CopyQuat and arp):
 #   stage1 -> load model.stage1_weights (skeleton RetNet); gate_scale ignored

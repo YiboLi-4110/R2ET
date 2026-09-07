@@ -98,7 +98,7 @@ render:
   floor_rotation_deg: 30.0
 
 sequence:
-  retarget_mode: arp # 还可以填写direct/r2et
+  retarget_mode: r2et # 还可以填写direct/arp
   # Side-by-side Source skinned mesh (fourway Source lane). Also: --show_source / --no_show_source
   show_source: false
   # Hold frames inserted between consecutive source clips.
@@ -124,7 +124,8 @@ motion:
   tgt_axis_transform: shepherd_y_z_x
   tgt_forward_mode: body
 
-# Source shape root for R2ET / show_source (per-clip .npz from BVH stem/folder).
+# Source lane (--show_source): sucaibao rest mesh + FBX (not the SMAL33 cat).
+# R2ET inference shape is r2et.train_shape below (33-joint smal@shepherd_cat).
 # Used when sources[] omit inp_shape_path.
 source:
   train_shape: ./datasets/shepherd/cat_actions_sucaibao/train_shape
@@ -133,7 +134,7 @@ source:
   #             (required for sucaibao / bone-oriented armatures; LBS 拉皮)
   #   lbs     — force Python joint-ball LBS
   #   blender — force Blender FBX evaluation
-  skin_backend: auto
+  skin_backend: blender
   # Blender export space (same choices as arp.mesh_export_space). Default matches
   # ARP so Source and Retarget stand on the same plane without horizontal drift.
   # mesh_export_space: world_root_h_locked_zup
@@ -179,8 +180,9 @@ direct:
 
 # R2ET path (sequence.retarget_mode=r2et). Mesh caches use space=lbs_y_up like direct.
 r2et:
-  # Optional override of source.train_shape (SOURCE shapes only).
-  # train_shape: ./datasets/shepherd/smal@shepherd/train_shape
+  # 33-joint SMAL33 source shape for RetNet (overrides source.train_shape here).
+  # source.train_shape stays on sucaibao for the Source-lane mesh.
+  train_shape: ./datasets/shepherd/smal@shepherd_cat/train_shape
   # Target shape root (TARGET dogs). Distinct from train_shape above.
   # shape_root: ./datasets/shepherd/batch3_dogs/batch3_dogs_shape
   mesh_orientation_correction: identity
@@ -198,10 +200,10 @@ ret_model_args:
 
 model:
   # Used when stage2.mode == stage1 (pure skeleton-aware RetNet).
-  stage1_weights: ./work_dir/train_smal@shepherd_cat_batch_dogs_skeleton_aware_smal33/r2et_shepherd_skeleton_aware_smal33_ret-0.pt
+  stage1_weights: ./work_dir/train_smal@shepherd_cat_batch_dogs_skeleton_aware_smal33/r2et_shepherd_skeleton_aware_smal33_ret-106.pt
   # Used when stage2.mode in {stage2, blend} (shape-aware RetNet).
   stage2_weights: ./work_dir/train_smal@shepherd_cat_batch_dogs_shape_aware_smal33/r2et_shepherd_shape_aware_smal33_ret-0.pt
-  stats_path: ./datasets/shepherd/stats
+  stats_path: ./datasets/shepherd/stats_cat
 
 # Inference (r2et mode only):
 #   stage1 -> load model.stage1_weights (skeleton RetNet); gate_scale ignored
@@ -244,113 +246,168 @@ target:
   tgt_shape_path: null
 
 # Ordered source clips. Edit this list freely.
-# Each entry needs inp_bvh_path (FBX is resolved from the same stem).
-# For r2et, inp_shape_path is optional if source.train_shape can resolve it.
+# inp_bvh_path: SMAL33 motion for R2ET (smal@shepherd_cat).
+# inp_fbx_path: sucaibao FBX for Source-lane Blender skin (required; default
+#   would pick the FBX next to the SMAL BVH).
+# R2ET source shape comes from r2et.train_shape; Source mesh size from source.train_shape.
 sources: 
   # 猫素材包当中挑选出的适配狗的源动作序列
   - clip_id: Attack_Crouch_IP
-    inp_bvh_path: ./datasets/shepherd/cat_actions_sucaibao/train_char/Attack/Attack_Crouch_IP.bvh
+    inp_bvh_path: ./datasets/shepherd/smal@shepherd_cat/train_char/Attack/Attack_Crouch_IP.bvh
+    inp_fbx_path: ./datasets/shepherd/cat_actions_sucaibao/train_char/Attack/Attack_Crouch_IP.fbx
   - clip_id: Attack_down_IP
-    inp_bvh_path: ./datasets/shepherd/cat_actions_sucaibao/train_char/Attack/Attack_down_IP.bvh
+    inp_bvh_path: ./datasets/shepherd/smal@shepherd_cat/train_char/Attack/Attack_down_IP.bvh
+    inp_fbx_path: ./datasets/shepherd/cat_actions_sucaibao/train_char/Attack/Attack_down_IP.fbx
   - clip_id: Attack_F_IP
-    inp_bvh_path: ./datasets/shepherd/cat_actions_sucaibao/train_char/Attack/Attack_F_IP.bvh
-  # - clip_id: Attack_L_IP
-  #   inp_bvh_path: ./datasets/shepherd/cat_actions_sucaibao/train_char/Attack/Attack_L_IP.bvh
-  # - clip_id: Attack_R_IP
-  #   inp_bvh_path: ./datasets/shepherd/cat_actions_sucaibao/train_char/Attack/Attack_R_IP.bvh
-  # - clip_id: Combat_start_IP
-  #   inp_bvh_path: ./datasets/shepherd/cat_actions_sucaibao/train_char/Combat/Combat_start_IP.bvh
-  # - clip_id: Combat_end_IP
-  #   inp_bvh_path: ./datasets/shepherd/cat_actions_sucaibao/train_char/Combat/Combat_end_IP.bvh
-  # - clip_id: EatDrink_start_RM
-  #   inp_bvh_path: ./datasets/shepherd/cat_actions_sucaibao/train_char/EatDrink/EatDrink_start_RM.bvh
-  # - clip_id: Drinking_RM
-  #   inp_bvh_path: ./datasets/shepherd/cat_actions_sucaibao/train_char/Drinking/Drinking_RM.bvh
-  # - clip_id: EatDrink_end_RM
-  #   inp_bvh_path: ./datasets/shepherd/cat_actions_sucaibao/train_char/EatDrink/EatDrink_end_RM.bvh
-  # - clip_id: Crouch_B_RM
-  #   inp_bvh_path: ./datasets/shepherd/cat_actions_sucaibao/train_char/Crouch/Crouch_B_RM.bvh
-  # - clip_id: Crouch_BL_RM
-  #   inp_bvh_path: ./datasets/shepherd/cat_actions_sucaibao/train_char/Crouch/Crouch_BL_RM.bvh
-  # - clip_id: Crouch_BR_RM
-  #   inp_bvh_path: ./datasets/shepherd/cat_actions_sucaibao/train_char/Crouch/Crouch_BR_RM.bvh
-  # - clip_id: CrouchTurn_L_RM
-  #   inp_bvh_path: ./datasets/shepherd/cat_actions_sucaibao/train_char/CrouchTurn/CrouchTurn_L_RM.bvh
-  # - clip_id: CrouchTurn_R_RM
-  #   inp_bvh_path: ./datasets/shepherd/cat_actions_sucaibao/train_char/CrouchTurn/CrouchTurn_R_RM.bvh
-  # - clip_id: Hit_B_RM
-  #   inp_bvh_path: ./datasets/shepherd/cat_actions_sucaibao/train_char/Hit/Hit_B_RM.bvh
-  # - clip_id: Hit_F_RM
-  #   inp_bvh_path: ./datasets/shepherd/cat_actions_sucaibao/train_char/Hit/Hit_F_RM.bvh
-  # - clip_id: Idle_2_RM
-  #   inp_bvh_path: ./datasets/shepherd/cat_actions_sucaibao/train_char/Idle/Idle_2_RM.bvh
-  # - clip_id: Idle_5_RM
-  #   inp_bvh_path: ./datasets/shepherd/cat_actions_sucaibao/train_char/Idle/Idle_5_RM.bvh
-  # - clip_id: Idle_6_RM
-  #   inp_bvh_path: ./datasets/shepherd/cat_actions_sucaibao/train_char/Idle/Idle_6_RM.bvh
-  # - clip_id: Idle_7_RM
-  #   inp_bvh_path: ./datasets/shepherd/cat_actions_sucaibao/train_char/Idle/Idle_7_RM.bvh
-  # - clip_id: Co_attack_F_RM
-  #   inp_bvh_path: ./datasets/shepherd/cat_actions_sucaibao/train_char/Co/Co_attack_F_RM.bvh
-  # - clip_id: Co_attack_L_RM
-  #   inp_bvh_path: ./datasets/shepherd/cat_actions_sucaibao/train_char/Co/Co_attack_L_RM.bvh
-  # - clip_id: Co_attack_R_RM
-  #   inp_bvh_path: ./datasets/shepherd/cat_actions_sucaibao/train_char/Co/Co_attack_R_RM.bvh
-  # - clip_id: Co_Hit_M_RM
-  #   inp_bvh_path: ./datasets/shepherd/cat_actions_sucaibao/train_char/Co/Co_Hit_M_RM.bvh
-  # - clip_id: Co_Hit_F_RM
-  #   inp_bvh_path: ./datasets/shepherd/cat_actions_sucaibao/train_char/Co/Co_Hit_F_RM.bvh
-  # - clip_id: Crouch_F_RM
-  #   inp_bvh_path: ./datasets/shepherd/cat_actions_sucaibao/train_char/Crouch/Crouch_F_RM.bvh
-  # - clip_id: Crouch_L_RM
-  #   inp_bvh_path: ./datasets/shepherd/cat_actions_sucaibao/train_char/Crouch/Crouch_L_RM.bvh
-  # - clip_id: Crouch_R_RM
-  #   inp_bvh_path: ./datasets/shepherd/cat_actions_sucaibao/train_char/Crouch/Crouch_R_RM.bvh
-  # - clip_id: JumpRun_IP
-  #   inp_bvh_path: ./datasets/shepherd/cat_actions_sucaibao/train_char/JumpRun/JumpRun_IP.bvh
-  # - clip_id: Run_F_IP
-  #   inp_bvh_path: ./datasets/shepherd/cat_actions_sucaibao/train_char/Run/Run_F_IP.bvh
-  # - clip_id: Run_L_RM
-  #   inp_bvh_path: ./datasets/shepherd/cat_actions_sucaibao/train_char/Run/Run_L_RM.bvh
-  # - clip_id: Run_R_RM
-  #   inp_bvh_path: ./datasets/shepherd/cat_actions_sucaibao/train_char/Run/Run_R_RM.bvh
-  # - clip_id: CrouchIdle_loop_2_RM
-  #   inp_bvh_path: ./datasets/shepherd/cat_actions_sucaibao/train_char/CrouchIdle/CrouchIdle_loop_2_RM.bvh
-  # - clip_id: CrouchIdle_end_RM
-  #   inp_bvh_path: ./datasets/shepherd/cat_actions_sucaibao/train_char/CrouchIdle/CrouchIdle_end_RM.bvh
-  # - clip_id: SharpenClaws_Horiz_RM
-  #   inp_bvh_path: ./datasets/shepherd/cat_actions_sucaibao/train_char/SharpenClaws/SharpenClaws_Horiz_RM.bvh
-  # - clip_id: Sit_end_RM
-  #   inp_bvh_path: ./datasets/shepherd/cat_actions_sucaibao/train_char/Sit/Sit_end_RM.bvh
-  # - clip_id: Trot_F_IP
-  #   inp_bvh_path: ./datasets/shepherd/cat_actions_sucaibao/train_char/Trot/Trot_F_IP.bvh
-  # - clip_id: Trot_L_RM
-  #   inp_bvh_path: ./datasets/shepherd/cat_actions_sucaibao/train_char/Trot/Trot_L_RM.bvh
-  # - clip_id: Trot_R_RM
-  #   inp_bvh_path: ./datasets/shepherd/cat_actions_sucaibao/train_char/Trot/Trot_R_RM.bvh
-  # - clip_id: Turn_L_RM
-  #   inp_bvh_path: ./datasets/shepherd/cat_actions_sucaibao/train_char/Turn/Turn_L_RM.bvh
-  # - clip_id: Turn_R_RM
-  #   inp_bvh_path: ./datasets/shepherd/cat_actions_sucaibao/train_char/Turn/Turn_R_RM.bvh
-  # - clip_id: Turn180_L_RM
-  #   inp_bvh_path: ./datasets/shepherd/cat_actions_sucaibao/train_char/Turn180/Turn180_L_RM.bvh
-  # - clip_id: Turn180_R_RM
-  #   inp_bvh_path: ./datasets/shepherd/cat_actions_sucaibao/train_char/Turn180/Turn180_R_RM.bvh
-  # - clip_id: Eating_RM
-  #   inp_bvh_path: ./datasets/shepherd/cat_actions_sucaibao/train_char/Eating/Eating_RM.bvh
-  # - clip_id: Walk_B_RM
-  #   inp_bvh_path: ./datasets/shepherd/cat_actions_sucaibao/train_char/Walk/Walk_B_RM.bvh
-  # - clip_id: Walk_BL_RM
-  #   inp_bvh_path: ./datasets/shepherd/cat_actions_sucaibao/train_char/Walk/Walk_BL_RM.bvh
-  # - clip_id: Walk_BR_RM
-  #   inp_bvh_path: ./datasets/shepherd/cat_actions_sucaibao/train_char/Walk/Walk_BR_RM.bvh
-  # - clip_id: Walk_F_RM
-  #   inp_bvh_path: ./datasets/shepherd/cat_actions_sucaibao/train_char/Walk/Walk_F_RM.bvh
-  # - clip_id: Walk_L_RM
-  #   inp_bvh_path: ./datasets/shepherd/cat_actions_sucaibao/train_char/Walk/Walk_L_RM.bvh
-  # - clip_id: Walk_R_RM
-  #   inp_bvh_path: ./datasets/shepherd/cat_actions_sucaibao/train_char/Walk/Walk_R_RM.bvh
-  # - clip_id: Caress_idle_IP
-  #   inp_bvh_path: ./datasets/shepherd/cat_actions_sucaibao/train_char/Caress/Caress_idle_IP.bvh
-  # - clip_id: Defecate_RM
-  #   inp_bvh_path: ./datasets/shepherd/cat_actions_sucaibao/train_char/Defecate/Defecate_RM.bvh
+    inp_bvh_path: ./datasets/shepherd/smal@shepherd_cat/train_char/Attack/Attack_F_IP.bvh
+    inp_fbx_path: ./datasets/shepherd/cat_actions_sucaibao/train_char/Attack/Attack_F_IP.fbx
+  - clip_id: Attack_L_IP
+    inp_bvh_path: ./datasets/shepherd/smal@shepherd_cat/train_char/Attack/Attack_L_IP.bvh
+    inp_fbx_path: ./datasets/shepherd/cat_actions_sucaibao/train_char/Attack/Attack_L_IP.fbx
+  - clip_id: Attack_R_IP
+    inp_bvh_path: ./datasets/shepherd/smal@shepherd_cat/train_char/Attack/Attack_R_IP.bvh
+    inp_fbx_path: ./datasets/shepherd/cat_actions_sucaibao/train_char/Attack/Attack_R_IP.fbx
+  - clip_id: Combat_start_IP
+    inp_bvh_path: ./datasets/shepherd/smal@shepherd_cat/train_char/Combat/Combat_start_IP.bvh
+    inp_fbx_path: ./datasets/shepherd/cat_actions_sucaibao/train_char/Combat/Combat_start_IP.fbx
+  - clip_id: Combat_end_IP
+    inp_bvh_path: ./datasets/shepherd/smal@shepherd_cat/train_char/Combat/Combat_end_IP.bvh
+    inp_fbx_path: ./datasets/shepherd/cat_actions_sucaibao/train_char/Combat/Combat_end_IP.fbx
+  - clip_id: EatDrink_start_RM
+    inp_bvh_path: ./datasets/shepherd/smal@shepherd_cat/train_char/EatDrink/EatDrink_start_RM.bvh
+    inp_fbx_path: ./datasets/shepherd/cat_actions_sucaibao/train_char/EatDrink/EatDrink_start_RM.fbx
+  - clip_id: Drinking_RM
+    inp_bvh_path: ./datasets/shepherd/smal@shepherd_cat/train_char/Drinking/Drinking_RM.bvh
+    inp_fbx_path: ./datasets/shepherd/cat_actions_sucaibao/train_char/Drinking/Drinking_RM.fbx
+  - clip_id: EatDrink_end_RM
+    inp_bvh_path: ./datasets/shepherd/smal@shepherd_cat/train_char/EatDrink/EatDrink_end_RM.bvh
+    inp_fbx_path: ./datasets/shepherd/cat_actions_sucaibao/train_char/EatDrink/EatDrink_end_RM.fbx
+  - clip_id: Crouch_B_RM
+    inp_bvh_path: ./datasets/shepherd/smal@shepherd_cat/train_char/Crouch/Crouch_B_RM.bvh
+    inp_fbx_path: ./datasets/shepherd/cat_actions_sucaibao/train_char/Crouch/Crouch_B_RM.fbx
+  - clip_id: Crouch_BL_RM
+    inp_bvh_path: ./datasets/shepherd/smal@shepherd_cat/train_char/Crouch/Crouch_BL_RM.bvh
+    inp_fbx_path: ./datasets/shepherd/cat_actions_sucaibao/train_char/Crouch/Crouch_BL_RM.fbx
+  - clip_id: Crouch_BR_RM
+    inp_bvh_path: ./datasets/shepherd/smal@shepherd_cat/train_char/Crouch/Crouch_BR_RM.bvh
+    inp_fbx_path: ./datasets/shepherd/cat_actions_sucaibao/train_char/Crouch/Crouch_BR_RM.fbx
+  - clip_id: CrouchTurn_L_RM
+    inp_bvh_path: ./datasets/shepherd/smal@shepherd_cat/train_char/CrouchTurn/CrouchTurn_L_RM.bvh
+    inp_fbx_path: ./datasets/shepherd/cat_actions_sucaibao/train_char/CrouchTurn/CrouchTurn_L_RM.fbx
+  - clip_id: CrouchTurn_R_RM
+    inp_bvh_path: ./datasets/shepherd/smal@shepherd_cat/train_char/CrouchTurn/CrouchTurn_R_RM.bvh
+    inp_fbx_path: ./datasets/shepherd/cat_actions_sucaibao/train_char/CrouchTurn/CrouchTurn_R_RM.fbx
+  - clip_id: Hit_B_RM
+    inp_bvh_path: ./datasets/shepherd/smal@shepherd_cat/train_char/Hit/Hit_B_RM.bvh
+    inp_fbx_path: ./datasets/shepherd/cat_actions_sucaibao/train_char/Hit/Hit_B_RM.fbx
+  - clip_id: Hit_F_RM
+    inp_bvh_path: ./datasets/shepherd/smal@shepherd_cat/train_char/Hit/Hit_F_RM.bvh
+    inp_fbx_path: ./datasets/shepherd/cat_actions_sucaibao/train_char/Hit/Hit_F_RM.fbx
+  - clip_id: Idle_2_RM
+    inp_bvh_path: ./datasets/shepherd/smal@shepherd_cat/train_char/Idle/Idle_2_RM.bvh
+    inp_fbx_path: ./datasets/shepherd/cat_actions_sucaibao/train_char/Idle/Idle_2_RM.fbx
+  - clip_id: Idle_5_RM
+    inp_bvh_path: ./datasets/shepherd/smal@shepherd_cat/train_char/Idle/Idle_5_RM.bvh
+    inp_fbx_path: ./datasets/shepherd/cat_actions_sucaibao/train_char/Idle/Idle_5_RM.fbx
+  - clip_id: Idle_6_RM
+    inp_bvh_path: ./datasets/shepherd/smal@shepherd_cat/train_char/Idle/Idle_6_RM.bvh
+    inp_fbx_path: ./datasets/shepherd/cat_actions_sucaibao/train_char/Idle/Idle_6_RM.fbx
+  - clip_id: Idle_7_RM
+    inp_bvh_path: ./datasets/shepherd/smal@shepherd_cat/train_char/Idle/Idle_7_RM.bvh
+    inp_fbx_path: ./datasets/shepherd/cat_actions_sucaibao/train_char/Idle/Idle_7_RM.fbx
+  - clip_id: Co_attack_F_RM
+    inp_bvh_path: ./datasets/shepherd/smal@shepherd_cat/train_char/Co/Co_attack_F_RM.bvh
+    inp_fbx_path: ./datasets/shepherd/cat_actions_sucaibao/train_char/Co/Co_attack_F_RM.fbx
+  - clip_id: Co_attack_L_RM
+    inp_bvh_path: ./datasets/shepherd/smal@shepherd_cat/train_char/Co/Co_attack_L_RM.bvh
+    inp_fbx_path: ./datasets/shepherd/cat_actions_sucaibao/train_char/Co/Co_attack_L_RM.fbx
+  - clip_id: Co_attack_R_RM
+    inp_bvh_path: ./datasets/shepherd/smal@shepherd_cat/train_char/Co/Co_attack_R_RM.bvh
+    inp_fbx_path: ./datasets/shepherd/cat_actions_sucaibao/train_char/Co/Co_attack_R_RM.fbx
+  - clip_id: Co_Hit_M_RM
+    inp_bvh_path: ./datasets/shepherd/smal@shepherd_cat/train_char/Co/Co_Hit_M_RM.bvh
+    inp_fbx_path: ./datasets/shepherd/cat_actions_sucaibao/train_char/Co/Co_Hit_M_RM.fbx
+  - clip_id: Co_Hit_F_RM
+    inp_bvh_path: ./datasets/shepherd/smal@shepherd_cat/train_char/Co/Co_Hit_F_RM.bvh
+    inp_fbx_path: ./datasets/shepherd/cat_actions_sucaibao/train_char/Co/Co_Hit_F_RM.fbx
+  - clip_id: Crouch_F_RM
+    inp_bvh_path: ./datasets/shepherd/smal@shepherd_cat/train_char/Crouch/Crouch_F_RM.bvh
+    inp_fbx_path: ./datasets/shepherd/cat_actions_sucaibao/train_char/Crouch/Crouch_F_RM.fbx
+  - clip_id: Crouch_L_RM
+    inp_bvh_path: ./datasets/shepherd/smal@shepherd_cat/train_char/Crouch/Crouch_L_RM.bvh
+    inp_fbx_path: ./datasets/shepherd/cat_actions_sucaibao/train_char/Crouch/Crouch_L_RM.fbx
+  - clip_id: Crouch_R_RM
+    inp_bvh_path: ./datasets/shepherd/smal@shepherd_cat/train_char/Crouch/Crouch_R_RM.bvh
+    inp_fbx_path: ./datasets/shepherd/cat_actions_sucaibao/train_char/Crouch/Crouch_R_RM.fbx
+  - clip_id: JumpRun_IP
+    inp_bvh_path: ./datasets/shepherd/smal@shepherd_cat/train_char/JumpRun/JumpRun_IP.bvh
+    inp_fbx_path: ./datasets/shepherd/cat_actions_sucaibao/train_char/JumpRun/JumpRun_IP.fbx
+  - clip_id: Run_F_IP
+    inp_bvh_path: ./datasets/shepherd/smal@shepherd_cat/train_char/Run/Run_F_IP.bvh
+    inp_fbx_path: ./datasets/shepherd/cat_actions_sucaibao/train_char/Run/Run_F_IP.fbx
+  - clip_id: Run_L_RM
+    inp_bvh_path: ./datasets/shepherd/smal@shepherd_cat/train_char/Run/Run_L_RM.bvh
+    inp_fbx_path: ./datasets/shepherd/cat_actions_sucaibao/train_char/Run/Run_L_RM.fbx
+  - clip_id: Run_R_RM
+    inp_bvh_path: ./datasets/shepherd/smal@shepherd_cat/train_char/Run/Run_R_RM.bvh
+    inp_fbx_path: ./datasets/shepherd/cat_actions_sucaibao/train_char/Run/Run_R_RM.fbx
+  - clip_id: CrouchIdle_loop_2_RM
+    inp_bvh_path: ./datasets/shepherd/smal@shepherd_cat/train_char/CrouchIdle/CrouchIdle_loop_2_RM.bvh
+    inp_fbx_path: ./datasets/shepherd/cat_actions_sucaibao/train_char/CrouchIdle/CrouchIdle_loop_2_RM.fbx
+  - clip_id: CrouchIdle_end_RM
+    inp_bvh_path: ./datasets/shepherd/smal@shepherd_cat/train_char/CrouchIdle/CrouchIdle_end_RM.bvh
+    inp_fbx_path: ./datasets/shepherd/cat_actions_sucaibao/train_char/CrouchIdle/CrouchIdle_end_RM.fbx
+  - clip_id: SharpenClaws_Horiz_RM
+    inp_bvh_path: ./datasets/shepherd/smal@shepherd_cat/train_char/SharpenClaws/SharpenClaws_Horiz_RM.bvh
+    inp_fbx_path: ./datasets/shepherd/cat_actions_sucaibao/train_char/SharpenClaws/SharpenClaws_Horiz_RM.fbx
+  - clip_id: Sit_end_RM
+    inp_bvh_path: ./datasets/shepherd/smal@shepherd_cat/train_char/Sit/Sit_end_RM.bvh
+    inp_fbx_path: ./datasets/shepherd/cat_actions_sucaibao/train_char/Sit/Sit_end_RM.fbx
+  - clip_id: Trot_F_IP
+    inp_bvh_path: ./datasets/shepherd/smal@shepherd_cat/train_char/Trot/Trot_F_IP.bvh
+    inp_fbx_path: ./datasets/shepherd/cat_actions_sucaibao/train_char/Trot/Trot_F_IP.fbx
+  - clip_id: Trot_L_RM
+    inp_bvh_path: ./datasets/shepherd/smal@shepherd_cat/train_char/Trot/Trot_L_RM.bvh
+    inp_fbx_path: ./datasets/shepherd/cat_actions_sucaibao/train_char/Trot/Trot_L_RM.fbx
+  - clip_id: Trot_R_RM
+    inp_bvh_path: ./datasets/shepherd/smal@shepherd_cat/train_char/Trot/Trot_R_RM.bvh
+    inp_fbx_path: ./datasets/shepherd/cat_actions_sucaibao/train_char/Trot/Trot_R_RM.fbx
+  - clip_id: Turn_L_RM
+    inp_bvh_path: ./datasets/shepherd/smal@shepherd_cat/train_char/Turn/Turn_L_RM.bvh
+    inp_fbx_path: ./datasets/shepherd/cat_actions_sucaibao/train_char/Turn/Turn_L_RM.fbx
+  - clip_id: Turn_R_RM
+    inp_bvh_path: ./datasets/shepherd/smal@shepherd_cat/train_char/Turn/Turn_R_RM.bvh
+    inp_fbx_path: ./datasets/shepherd/cat_actions_sucaibao/train_char/Turn/Turn_R_RM.fbx
+  - clip_id: Turn180_L_RM
+    inp_bvh_path: ./datasets/shepherd/smal@shepherd_cat/train_char/Turn180/Turn180_L_RM.bvh
+    inp_fbx_path: ./datasets/shepherd/cat_actions_sucaibao/train_char/Turn180/Turn180_L_RM.fbx
+  - clip_id: Turn180_R_RM
+    inp_bvh_path: ./datasets/shepherd/smal@shepherd_cat/train_char/Turn180/Turn180_R_RM.bvh
+    inp_fbx_path: ./datasets/shepherd/cat_actions_sucaibao/train_char/Turn180/Turn180_R_RM.fbx
+  - clip_id: Eating_RM
+    inp_bvh_path: ./datasets/shepherd/smal@shepherd_cat/train_char/Eating/Eating_RM.bvh
+    inp_fbx_path: ./datasets/shepherd/cat_actions_sucaibao/train_char/Eating/Eating_RM.fbx
+  - clip_id: Walk_B_RM
+    inp_bvh_path: ./datasets/shepherd/smal@shepherd_cat/train_char/Walk/Walk_B_RM.bvh
+    inp_fbx_path: ./datasets/shepherd/cat_actions_sucaibao/train_char/Walk/Walk_B_RM.fbx
+  - clip_id: Walk_BL_RM
+    inp_bvh_path: ./datasets/shepherd/smal@shepherd_cat/train_char/Walk/Walk_BL_RM.bvh
+    inp_fbx_path: ./datasets/shepherd/cat_actions_sucaibao/train_char/Walk/Walk_BL_RM.fbx
+  - clip_id: Walk_BR_RM
+    inp_bvh_path: ./datasets/shepherd/smal@shepherd_cat/train_char/Walk/Walk_BR_RM.bvh
+    inp_fbx_path: ./datasets/shepherd/cat_actions_sucaibao/train_char/Walk/Walk_BR_RM.fbx
+  - clip_id: Walk_F_RM
+    inp_bvh_path: ./datasets/shepherd/smal@shepherd_cat/train_char/Walk/Walk_F_RM.bvh
+    inp_fbx_path: ./datasets/shepherd/cat_actions_sucaibao/train_char/Walk/Walk_F_RM.fbx
+  - clip_id: Walk_L_RM
+    inp_bvh_path: ./datasets/shepherd/smal@shepherd_cat/train_char/Walk/Walk_L_RM.bvh
+    inp_fbx_path: ./datasets/shepherd/cat_actions_sucaibao/train_char/Walk/Walk_L_RM.fbx
+  - clip_id: Walk_R_RM
+    inp_bvh_path: ./datasets/shepherd/smal@shepherd_cat/train_char/Walk/Walk_R_RM.bvh
+    inp_fbx_path: ./datasets/shepherd/cat_actions_sucaibao/train_char/Walk/Walk_R_RM.fbx
+  - clip_id: Caress_idle_IP
+    inp_bvh_path: ./datasets/shepherd/smal@shepherd_cat/train_char/Caress/Caress_idle_IP.bvh
+    inp_fbx_path: ./datasets/shepherd/cat_actions_sucaibao/train_char/Caress/Caress_idle_IP.fbx
+  - clip_id: Defecate_RM
+    inp_bvh_path: ./datasets/shepherd/smal@shepherd_cat/train_char/Defecate/Defecate_RM.bvh
+    inp_fbx_path: ./datasets/shepherd/cat_actions_sucaibao/train_char/Defecate/Defecate_RM.fbx

@@ -1,6 +1,8 @@
 # Stage-1 skeleton-aware visual inspection for smal@shepherd / batch2_dogs.
 weights: ./work_dir/train_smal@shepherd_dog_batch_dogs_skeleton_aware_smal33/r2et_shepherd_skeleton_aware_smal33_ret-118.pt
 save_path: ./work_dir/train_smal@shepherd_dog_batch_dogs_skeleton_aware_smal33/inspect
+# weights: ./work_dir/train_smal@shepherd_cat_batch_dogs_skeleton_aware_smal33/r2et_shepherd_skeleton_aware_smal33_ret-106.pt
+# save_path: ./work_dir/train_smal@shepherd_cat_batch_dogs_skeleton_aware_smal33/inspect
 device: 0
 self_recon: false
 view_mode: root_centered
@@ -16,7 +18,12 @@ ret_model_args:
   kp: 0.8
 
 load_inp_data:
-  stats_path: ./datasets/shepherd/stats
+  # stats_path: ./datasets/shepherd/stats_cat  
+  # inp_shape_path: ./datasets/shepherd/smal@shepherd_cat/train_shape/Crouch.npz
+  # tgt_shape_path: ./datasets/shepherd/batch_dogs/batch_dogs_shape/lihua_hair_remesh0830-0.npz
+  # inp_bvh_path: ./datasets/shepherd/smal@shepherd_cat/train_char/Crouch/Crouch_BL_RM.bvh
+  # tgt_bvh_path: ./datasets/shepherd/batch_dogs/batch_dogs_char/lihua/lihua_hair_remesh0830-0.bvh
+  stats_path: ./datasets/shepherd/stats_dog
   inp_shape_path: ./datasets/shepherd/smal@shepherd_dog/train_shape/shepherd@Crouch.npz
   tgt_shape_path: ./datasets/shepherd/batch_dogs/batch_dogs_shape/hashiqi_dog_remesh-0.npz
   inp_bvh_path: ./datasets/shepherd/smal@shepherd_dog/train_char/shepherd@Crouch/shepherd@Crouch_BL_RM_smal_dog-foot_on_ground.bvh

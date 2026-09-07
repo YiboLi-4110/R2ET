@@ -29,7 +29,7 @@ ret_model_args:
   tail_dof_num: 1
 
 load_inp_data:
-  stats_path: ./datasets/shepherd/stats
+  stats_path: ./datasets/shepherd/stats_dog
   inp_shape_path: ./datasets/shepherd/smal@shepherd_dog/train_shape/shepherd@Crouch.npz
   tgt_shape_path: ./datasets/shepherd/batch_dogs/batch_dogs_shape/hashiqi_dog_remesh-0.npz
   inp_bvh_path: ./datasets/shepherd/smal@shepherd_dog/train_char/shepherd@Crouch/shepherd@Crouch_BL_RM_smal_dog-foot_on_ground.bvh

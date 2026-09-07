@@ -42,7 +42,7 @@ dis_model_args:
 
 epoch: 120
 device: [0]
-step: [50, 100]
+step: [40, 100]
 base_lr: 0.01
 # Multiplicative LR decay factor at each milestone in `step` (MultiStepLR gamma).
 # e.g. 0.1 -> lr *= 0.1; 0.5 -> lr *= 0.5

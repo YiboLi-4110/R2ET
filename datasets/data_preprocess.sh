@@ -28,6 +28,7 @@ $BLENDER -b -P ./fbx2bvh_smal33.py -- \
   --threads_per_worker 1 \
   --overwrite_existing \
   --mocap_y_up \
+  --bvh_yaw_deg 90
 
 python ./preprocess_q_smal33.py \
   --data_path ./shepherd/smal@shepherd_cat/train_char \

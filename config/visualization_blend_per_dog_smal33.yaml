@@ -23,32 +23,32 @@ source:
     - shepherd@Attack/shepherd@Attack_J_smal_dog-foot_on_ground.bvh
     - shepherd@Attack/shepherd@Attack_L_smal_dog-foot_on_ground.bvh
     - shepherd@Bark/shepherd@Bark_smal_dog-foot_on_ground.bvh
-    # - shepherd@Crouch/shepherd@Crouch_B_RM_smal_dog-foot_on_ground.bvh
-    # - shepherd@Crouch/shepherd@Crouch_BL_RM_smal_dog-foot_on_ground.bvh
-    # - shepherd@Crouch/shepherd@Crouch_BR_RM_smal_dog-foot_on_ground.bvh
-    # - shepherd@Crouch/shepherd@Crouch_F_RM_smal_dog-foot_on_ground.bvh
-    # - shepherd@Crouch/shepherd@Crouch_Idle_loop_2_smal_dog-foot_on_ground.bvh
-    # - shepherd@Crouch/shepherd@Crouch_R_RM_smal_dog-foot_on_ground.bvh
-    # - shepherd@Crouch/shepherd@Crouch_L_RM_smal_dog-foot_on_ground.bvh
-    # - shepherd@Digging/shepherd@Digging_loop_smal_dog-foot_on_ground.bvh
-    # - shepherd@Drink/shepherd@Drink_loop_smal_dog-foot_on_ground.bvh
-    # - shepherd@Eat/shepherd@Eat_loop_smal_dog-foot_on_ground.bvh
-    # - shepherd@Eat/shepherd@Eat_tear_smal_dog-foot_on_ground.bvh
-    # - shepherd@Hit/shepherd@Hit_F_smal_dog-foot_on_ground.bvh
-    # - shepherd@Hit/shepherd@Hit_M_smal_dog-foot_on_ground.bvh
-    # - shepherd@Idle/shepherd@Idle_2_smal_dog-foot_on_ground.bvh
-    # - shepherd@Idle/shepherd@Idle_3_smal_dog-foot_on_ground.bvh
-    # - shepherd@Idle/shepherd@Idle_4_smal_dog-foot_on_ground.bvh
-    # - shepherd@Idle/shepherd@Idle_7_smal_dog-foot_on_ground.bvh
-    # - shepherd@Jump/shepherd@Jump_Run_RM_smal_dog-foot_on_ground.bvh
-    # - shepherd@Put/shepherd@Put_down_smal_dog-foot_on_ground.bvh
-    # - shepherd@Run/shepherd@Run_F_RM_smal_dog-foot_on_ground.bvh
-    # - shepherd@Run/shepherd@Run_L_RM_smal_dog-foot_on_ground.bvh
-    # - shepherd@Run/shepherd@Run_R_RM_smal_dog-foot_on_ground.bvh
-    # - shepherd@Turn/shepherd@Turn_R_RM_smal_dog-foot_on_ground.bvh
-    # - shepherd@Turn/shepherd@Turn_R180_RM_smal_dog-foot_on_ground.bvh
-    # - shepherd@Turn/shepherd@Turn_L_RM_smal_dog-foot_on_ground.bvh
-    # - shepherd@Turn/shepherd@Turn_L180_RM_smal_dog-foot_on_ground.bvh
+    - shepherd@Crouch/shepherd@Crouch_B_RM_smal_dog-foot_on_ground.bvh
+    - shepherd@Crouch/shepherd@Crouch_BL_RM_smal_dog-foot_on_ground.bvh
+    - shepherd@Crouch/shepherd@Crouch_BR_RM_smal_dog-foot_on_ground.bvh
+    - shepherd@Crouch/shepherd@Crouch_F_RM_smal_dog-foot_on_ground.bvh
+    - shepherd@Crouch/shepherd@Crouch_Idle_loop_2_smal_dog-foot_on_ground.bvh
+    - shepherd@Crouch/shepherd@Crouch_R_RM_smal_dog-foot_on_ground.bvh
+    - shepherd@Crouch/shepherd@Crouch_L_RM_smal_dog-foot_on_ground.bvh
+    - shepherd@Digging/shepherd@Digging_loop_smal_dog-foot_on_ground.bvh
+    - shepherd@Drink/shepherd@Drink_loop_smal_dog-foot_on_ground.bvh
+    - shepherd@Eat/shepherd@Eat_loop_smal_dog-foot_on_ground.bvh
+    - shepherd@Eat/shepherd@Eat_tear_smal_dog-foot_on_ground.bvh
+    - shepherd@Hit/shepherd@Hit_F_smal_dog-foot_on_ground.bvh
+    - shepherd@Hit/shepherd@Hit_M_smal_dog-foot_on_ground.bvh
+    - shepherd@Idle/shepherd@Idle_2_smal_dog-foot_on_ground.bvh
+    - shepherd@Idle/shepherd@Idle_3_smal_dog-foot_on_ground.bvh
+    - shepherd@Idle/shepherd@Idle_4_smal_dog-foot_on_ground.bvh
+    - shepherd@Idle/shepherd@Idle_7_smal_dog-foot_on_ground.bvh
+    - shepherd@Jump/shepherd@Jump_Run_RM_smal_dog-foot_on_ground.bvh
+    - shepherd@Put/shepherd@Put_down_smal_dog-foot_on_ground.bvh
+    - shepherd@Run/shepherd@Run_F_RM_smal_dog-foot_on_ground.bvh
+    - shepherd@Run/shepherd@Run_L_RM_smal_dog-foot_on_ground.bvh
+    - shepherd@Run/shepherd@Run_R_RM_smal_dog-foot_on_ground.bvh
+    - shepherd@Turn/shepherd@Turn_R_RM_smal_dog-foot_on_ground.bvh
+    - shepherd@Turn/shepherd@Turn_R180_RM_smal_dog-foot_on_ground.bvh
+    - shepherd@Turn/shepherd@Turn_L_RM_smal_dog-foot_on_ground.bvh
+    - shepherd@Turn/shepherd@Turn_L180_RM_smal_dog-foot_on_ground.bvh
 
 targets:
   dog_ids:
@@ -109,7 +109,7 @@ model:
   stage1_weights: ./work_dir/train_smal@shepherd_dog_batch_dogs_skeleton_aware_smal33/r2et_shepherd_skeleton_aware_smal33_ret-118.pt
   # Used when stage2.mode in {stage2, blend} (shape-aware RetNet).
   stage2_weights: ./work_dir/train_smal@shepherd_dog_batch_dogs_shape_aware_smal33/r2et_shepherd_shape_aware_smal33_ret-95.pt
-  stats_path: ./datasets/shepherd/stats
+  stats_path: ./datasets/shepherd/stats_dog
 
 # Inference (retarget_mode=r2et only; ignored for direct/CopyQuat and arp):
 #   stage1 -> load model.stage1_weights (skeleton RetNet); gate_scale ignored
