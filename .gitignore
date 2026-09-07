@@ -9,12 +9,13 @@ datasets/Planet_Zoo_FBX-smal2
 datasets/Planet_Zoo_FBX-cleaned
 datasets/source_motion
 datasets/mixamo/train_q
-datasets/shepherd
 datasets/*.json
+datasets/shepherd/smal@shepherd_dog/train_q
+datasets/shepherd/smal@shepherd_dog/train_shape
+datasets/shepherd/smal@shepherd_cat/train_q
+datasets/shepherd/smal@shepherd_cat/train_shape
 work_dir/
 temp/
 .cursorignore
 *.log
 *.bvh
-*.npz
-*.npy
