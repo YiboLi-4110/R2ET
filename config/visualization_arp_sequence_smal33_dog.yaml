@@ -98,7 +98,7 @@ render:
   floor_rotation_deg: 30.0
 
 sequence:
-  retarget_mode: direct
+  retarget_mode: r2et # 还可以填写direct/arp
   # Side-by-side Source skinned mesh (fourway Source lane). Also: --show_source / --no_show_source
   show_source: false
   # Hold frames inserted between consecutive source clips.
@@ -199,7 +199,7 @@ model:
 #   stage2 -> load model.stage2_weights; force full gate, k=gate_scale
 #   blend  -> load model.stage2_weights; learned gate * gate_scale
 stage2:
-  mode: blend
+  mode: stage1
   gate_scale: 1.5
 
 arp:
@@ -245,55 +245,55 @@ sources:
     inp_bvh_path: ./datasets/shepherd/smal@shepherd_dog/train_char/shepherd@Attack/shepherd@Attack_L_smal_dog-foot_on_ground.bvh
   - clip_id: shepherd@Bark_smal_dog-foot_on_ground
     inp_bvh_path: ./datasets/shepherd/smal@shepherd_dog/train_char/shepherd@Bark/shepherd@Bark_smal_dog-foot_on_ground.bvh
-  - clip_id: shepherd@Crouch_B_RM_smal_dog-foot_on_ground
-    inp_bvh_path: ./datasets/shepherd/smal@shepherd_dog/train_char/shepherd@Crouch/shepherd@Crouch_B_RM_smal_dog-foot_on_ground.bvh
-  - clip_id: shepherd@Crouch_BL_RM_smal_dog-foot_on_ground
-    inp_bvh_path: ./datasets/shepherd/smal@shepherd_dog/train_char/shepherd@Crouch/shepherd@Crouch_BL_RM_smal_dog-foot_on_ground.bvh
-  - clip_id: shepherd@Crouch_BR_RM_smal_dog-foot_on_ground
-    inp_bvh_path: ./datasets/shepherd/smal@shepherd_dog/train_char/shepherd@Crouch/shepherd@Crouch_BR_RM_smal_dog-foot_on_ground.bvh
-  - clip_id: shepherd@Crouch_F_RM_smal_dog-foot_on_ground
-    inp_bvh_path: ./datasets/shepherd/smal@shepherd_dog/train_char/shepherd@Crouch/shepherd@Crouch_F_RM_smal_dog-foot_on_ground.bvh
-  - clip_id: shepherd@Crouch_Idle_loop_2_smal_dog-foot_on_ground
-    inp_bvh_path: ./datasets/shepherd/smal@shepherd_dog/train_char/shepherd@Crouch/shepherd@Crouch_Idle_loop_2_smal_dog-foot_on_ground.bvh
-  - clip_id: shepherd@Crouch_R_RM_smal_dog-foot_on_ground
-    inp_bvh_path: ./datasets/shepherd/smal@shepherd_dog/train_char/shepherd@Crouch/shepherd@Crouch_R_RM_smal_dog-foot_on_ground.bvh
-  - clip_id: shepherd@Crouch_L_RM_smal_dog-foot_on_ground
-    inp_bvh_path: ./datasets/shepherd/smal@shepherd_dog/train_char/shepherd@Crouch/shepherd@Crouch_L_RM_smal_dog-foot_on_ground.bvh
-  - clip_id: shepherd@Digging_loop_smal_dog-foot_on_ground
-    inp_bvh_path: ./datasets/shepherd/smal@shepherd_dog/train_char/shepherd@Digging/shepherd@Digging_loop_smal_dog-foot_on_ground.bvh
-  - clip_id: shepherd@Drink_loop_smal_dog-foot_on_ground
-    inp_bvh_path: ./datasets/shepherd/smal@shepherd_dog/train_char/shepherd@Drink/shepherd@Drink_loop_smal_dog-foot_on_ground.bvh
-  - clip_id: shepherd@Eat_loop_smal_dog-foot_on_ground
-    inp_bvh_path: ./datasets/shepherd/smal@shepherd_dog/train_char/shepherd@Eat/shepherd@Eat_loop_smal_dog-foot_on_ground.bvh
-  - clip_id: shepherd@Eat_tear_smal_dog-foot_on_ground
-    inp_bvh_path: ./datasets/shepherd/smal@shepherd_dog/train_char/shepherd@Eat/shepherd@Eat_tear_smal_dog-foot_on_ground.bvh
-  - clip_id: shepherd@Hit_F_smal_dog-foot_on_ground
-    inp_bvh_path: ./datasets/shepherd/smal@shepherd_dog/train_char/shepherd@Hit/shepherd@Hit_F_smal_dog-foot_on_ground.bvh
-  - clip_id: shepherd@Hit_M_smal_dog-foot_on_ground
-    inp_bvh_path: ./datasets/shepherd/smal@shepherd_dog/train_char/shepherd@Hit/shepherd@Hit_M_smal_dog-foot_on_ground.bvh
-  - clip_id: shepherd@Idle_2_smal_dog-foot_on_ground
-    inp_bvh_path: ./datasets/shepherd/smal@shepherd_dog/train_char/shepherd@Idle/shepherd@Idle_2_smal_dog-foot_on_ground.bvh
-  - clip_id: shepherd@Idle_3_smal_dog-foot_on_ground
-    inp_bvh_path: ./datasets/shepherd/smal@shepherd_dog/train_char/shepherd@Idle/shepherd@Idle_3_smal_dog-foot_on_ground.bvh
-  - clip_id: shepherd@Idle_4_smal_dog-foot_on_ground
-    inp_bvh_path: ./datasets/shepherd/smal@shepherd_dog/train_char/shepherd@Idle/shepherd@Idle_4_smal_dog-foot_on_ground.bvh
-  - clip_id: shepherd@Idle_7_smal_dog-foot_on_ground
-    inp_bvh_path: ./datasets/shepherd/smal@shepherd_dog/train_char/shepherd@Idle/shepherd@Idle_7_smal_dog-foot_on_ground.bvh
-  - clip_id: shepherd@Jump_Run_RM_smal_dog-foot_on_ground
-    inp_bvh_path: ./datasets/shepherd/smal@shepherd_dog/train_char/shepherd@Jump/shepherd@Jump_Run_RM_smal_dog-foot_on_ground.bvh
-  - clip_id: shepherd@Put_down_smal_dog-foot_on_ground
-    inp_bvh_path: ./datasets/shepherd/smal@shepherd_dog/train_char/shepherd@Put/shepherd@Put_down_smal_dog-foot_on_ground.bvh
-  - clip_id: shepherd@Run_F_RM_smal_dog-foot_on_ground
-    inp_bvh_path: ./datasets/shepherd/smal@shepherd_dog/train_char/shepherd@Run/shepherd@Run_F_RM_smal_dog-foot_on_ground.bvh
-  - clip_id: shepherd@Run_L_RM_smal_dog-foot_on_ground
-    inp_bvh_path: ./datasets/shepherd/smal@shepherd_dog/train_char/shepherd@Run/shepherd@Run_L_RM_smal_dog-foot_on_ground.bvh
-  - clip_id: shepherd@Run_R_RM_smal_dog-foot_on_ground
-    inp_bvh_path: ./datasets/shepherd/smal@shepherd_dog/train_char/shepherd@Run/shepherd@Run_R_RM_smal_dog-foot_on_ground.bvh
-  - clip_id: shepherd@Turn_R_RM_smal_dog-foot_on_ground
-    inp_bvh_path: ./datasets/shepherd/smal@shepherd_dog/train_char/shepherd@Turn/shepherd@Turn_R_RM_smal_dog-foot_on_ground.bvh
-  - clip_id: shepherd@Turn_R180_RM_smal_dog-foot_on_ground
-    inp_bvh_path: ./datasets/shepherd/smal@shepherd_dog/train_char/shepherd@Turn/shepherd@Turn_R180_RM_smal_dog-foot_on_ground.bvh
-  - clip_id: shepherd@Turn_L_RM_smal_dog-foot_on_ground
-    inp_bvh_path: ./datasets/shepherd/smal@shepherd_dog/train_char/shepherd@Turn/shepherd@Turn_L_RM_smal_dog-foot_on_ground.bvh
-  - clip_id: shepherd@Turn_L180_RM_smal_dog-foot_on_ground
-    inp_bvh_path: ./datasets/shepherd/smal@shepherd_dog/train_char/shepherd@Turn/shepherd@Turn_L180_RM_smal_dog-foot_on_ground.bvh
+  # - clip_id: shepherd@Crouch_B_RM_smal_dog-foot_on_ground
+  #   inp_bvh_path: ./datasets/shepherd/smal@shepherd_dog/train_char/shepherd@Crouch/shepherd@Crouch_B_RM_smal_dog-foot_on_ground.bvh
+  # - clip_id: shepherd@Crouch_BL_RM_smal_dog-foot_on_ground
+  #   inp_bvh_path: ./datasets/shepherd/smal@shepherd_dog/train_char/shepherd@Crouch/shepherd@Crouch_BL_RM_smal_dog-foot_on_ground.bvh
+  # - clip_id: shepherd@Crouch_BR_RM_smal_dog-foot_on_ground
+  #   inp_bvh_path: ./datasets/shepherd/smal@shepherd_dog/train_char/shepherd@Crouch/shepherd@Crouch_BR_RM_smal_dog-foot_on_ground.bvh
+  # - clip_id: shepherd@Crouch_F_RM_smal_dog-foot_on_ground
+  #   inp_bvh_path: ./datasets/shepherd/smal@shepherd_dog/train_char/shepherd@Crouch/shepherd@Crouch_F_RM_smal_dog-foot_on_ground.bvh
+  # - clip_id: shepherd@Crouch_Idle_loop_2_smal_dog-foot_on_ground
+  #   inp_bvh_path: ./datasets/shepherd/smal@shepherd_dog/train_char/shepherd@Crouch/shepherd@Crouch_Idle_loop_2_smal_dog-foot_on_ground.bvh
+  # - clip_id: shepherd@Crouch_R_RM_smal_dog-foot_on_ground
+  #   inp_bvh_path: ./datasets/shepherd/smal@shepherd_dog/train_char/shepherd@Crouch/shepherd@Crouch_R_RM_smal_dog-foot_on_ground.bvh
+  # - clip_id: shepherd@Crouch_L_RM_smal_dog-foot_on_ground
+  #   inp_bvh_path: ./datasets/shepherd/smal@shepherd_dog/train_char/shepherd@Crouch/shepherd@Crouch_L_RM_smal_dog-foot_on_ground.bvh
+  # - clip_id: shepherd@Digging_loop_smal_dog-foot_on_ground
+  #   inp_bvh_path: ./datasets/shepherd/smal@shepherd_dog/train_char/shepherd@Digging/shepherd@Digging_loop_smal_dog-foot_on_ground.bvh
+  # - clip_id: shepherd@Drink_loop_smal_dog-foot_on_ground
+  #   inp_bvh_path: ./datasets/shepherd/smal@shepherd_dog/train_char/shepherd@Drink/shepherd@Drink_loop_smal_dog-foot_on_ground.bvh
+  # - clip_id: shepherd@Eat_loop_smal_dog-foot_on_ground
+  #   inp_bvh_path: ./datasets/shepherd/smal@shepherd_dog/train_char/shepherd@Eat/shepherd@Eat_loop_smal_dog-foot_on_ground.bvh
+  # - clip_id: shepherd@Eat_tear_smal_dog-foot_on_ground
+  #   inp_bvh_path: ./datasets/shepherd/smal@shepherd_dog/train_char/shepherd@Eat/shepherd@Eat_tear_smal_dog-foot_on_ground.bvh
+  # - clip_id: shepherd@Hit_F_smal_dog-foot_on_ground
+  #   inp_bvh_path: ./datasets/shepherd/smal@shepherd_dog/train_char/shepherd@Hit/shepherd@Hit_F_smal_dog-foot_on_ground.bvh
+  # - clip_id: shepherd@Hit_M_smal_dog-foot_on_ground
+  #   inp_bvh_path: ./datasets/shepherd/smal@shepherd_dog/train_char/shepherd@Hit/shepherd@Hit_M_smal_dog-foot_on_ground.bvh
+  # - clip_id: shepherd@Idle_2_smal_dog-foot_on_ground
+  #   inp_bvh_path: ./datasets/shepherd/smal@shepherd_dog/train_char/shepherd@Idle/shepherd@Idle_2_smal_dog-foot_on_ground.bvh
+  # - clip_id: shepherd@Idle_3_smal_dog-foot_on_ground
+  #   inp_bvh_path: ./datasets/shepherd/smal@shepherd_dog/train_char/shepherd@Idle/shepherd@Idle_3_smal_dog-foot_on_ground.bvh
+  # - clip_id: shepherd@Idle_4_smal_dog-foot_on_ground
+  #   inp_bvh_path: ./datasets/shepherd/smal@shepherd_dog/train_char/shepherd@Idle/shepherd@Idle_4_smal_dog-foot_on_ground.bvh
+  # - clip_id: shepherd@Idle_7_smal_dog-foot_on_ground
+  #   inp_bvh_path: ./datasets/shepherd/smal@shepherd_dog/train_char/shepherd@Idle/shepherd@Idle_7_smal_dog-foot_on_ground.bvh
+  # - clip_id: shepherd@Jump_Run_RM_smal_dog-foot_on_ground
+  #   inp_bvh_path: ./datasets/shepherd/smal@shepherd_dog/train_char/shepherd@Jump/shepherd@Jump_Run_RM_smal_dog-foot_on_ground.bvh
+  # - clip_id: shepherd@Put_down_smal_dog-foot_on_ground
+  #   inp_bvh_path: ./datasets/shepherd/smal@shepherd_dog/train_char/shepherd@Put/shepherd@Put_down_smal_dog-foot_on_ground.bvh
+  # - clip_id: shepherd@Run_F_RM_smal_dog-foot_on_ground
+  #   inp_bvh_path: ./datasets/shepherd/smal@shepherd_dog/train_char/shepherd@Run/shepherd@Run_F_RM_smal_dog-foot_on_ground.bvh
+  # - clip_id: shepherd@Run_L_RM_smal_dog-foot_on_ground
+  #   inp_bvh_path: ./datasets/shepherd/smal@shepherd_dog/train_char/shepherd@Run/shepherd@Run_L_RM_smal_dog-foot_on_ground.bvh
+  # - clip_id: shepherd@Run_R_RM_smal_dog-foot_on_ground
+  #   inp_bvh_path: ./datasets/shepherd/smal@shepherd_dog/train_char/shepherd@Run/shepherd@Run_R_RM_smal_dog-foot_on_ground.bvh
+  # - clip_id: shepherd@Turn_R_RM_smal_dog-foot_on_ground
+  #   inp_bvh_path: ./datasets/shepherd/smal@shepherd_dog/train_char/shepherd@Turn/shepherd@Turn_R_RM_smal_dog-foot_on_ground.bvh
+  # - clip_id: shepherd@Turn_R180_RM_smal_dog-foot_on_ground
+  #   inp_bvh_path: ./datasets/shepherd/smal@shepherd_dog/train_char/shepherd@Turn/shepherd@Turn_R180_RM_smal_dog-foot_on_ground.bvh
+  # - clip_id: shepherd@Turn_L_RM_smal_dog-foot_on_ground
+  #   inp_bvh_path: ./datasets/shepherd/smal@shepherd_dog/train_char/shepherd@Turn/shepherd@Turn_L_RM_smal_dog-foot_on_ground.bvh
+  # - clip_id: shepherd@Turn_L180_RM_smal_dog-foot_on_ground
+  #   inp_bvh_path: ./datasets/shepherd/smal@shepherd_dog/train_char/shepherd@Turn/shepherd@Turn_L180_RM_smal_dog-foot_on_ground.bvh

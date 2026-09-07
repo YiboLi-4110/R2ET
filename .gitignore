@@ -15,6 +15,7 @@ datasets/shepherd/smal@shepherd_dog/train_shape
 datasets/shepherd/smal@shepherd_cat/train_q
 datasets/shepherd/smal@shepherd_cat/train_shape
 temp/
+try.sh
 .cursorignore
 *.log
 *.bvh

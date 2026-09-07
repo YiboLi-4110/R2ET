@@ -2,8 +2,6 @@ output_root: ./visualization/blend_retarget_results/_work
 blend_output_dir: ./visualization/blend_retarget_results
 device: 0
 
-retarget_mode: arp
-
 source:
   train_char: ./datasets/shepherd/cat_actions_sucaibao/train_char
   train_shape: ./datasets/shepherd/cat_actions_sucaibao/train_shape
@@ -25,56 +23,56 @@ source:
     - Attack/Attack_Crouch_IP.bvh
     - Attack/Attack_down_IP.bvh
     - Attack/Attack_F_IP.bvh
-    - Attack/Attack_L_IP.bvh
-    - Attack/Attack_R_IP.bvh
-    - Combat/Combat_start_IP.bvh
-    - Combat/Combat_end_IP.bvh
-    - EatDrink/EatDrink_start_RM.bvh
-    - Drinking/Drinking_RM.bvh
-    - EatDrink/EatDrink_end_RM.bvh
-    - Crouch/Crouch_B_RM.bvh
-    - Crouch/Crouch_BL_RM.bvh
-    - Crouch/Crouch_BR_RM.bvh
-    - CrouchTurn/CrouchTurn_L_RM.bvh
-    - CrouchTurn/CrouchTurn_R_RM.bvh
-    - Hit/Hit_B_RM.bvh
-    - Hit/Hit_F_RM.bvh
-    - Idle/Idle_2_RM.bvh
-    - Idle/Idle_5_RM.bvh
-    - Idle/Idle_6_RM.bvh
-    - Idle/Idle_7_RM.bvh
-    - Co/Co_attack_F_RM.bvh
-    - Co/Co_attack_L_RM.bvh
-    - Co/Co_attack_R_RM.bvh
-    - Co/Co_Hit_M_RM.bvh
-    - Co/Co_Hit_F_RM.bvh
-    - Crouch/Crouch_F_RM.bvh
-    - Crouch/Crouch_L_RM.bvh
-    - Crouch/Crouch_R_RM.bvh
-    - JumpRun/JumpRun_IP.bvh
-    - Run/Run_F_IP.bvh
-    - Run/Run_L_IP.bvh
-    - Run/Run_R_IP.bvh
-    - CrouchIdle/CrouchIdle_loop_2_RM.bvh
-    - CrouchIdle/CrouchIdle_end_RM.bvh
-    - SharpenClaws/SharpenClaws_Horiz_RM.bvh
-    - Sit/Sit_end_RM.bvh
-    - Trot/Trot_F_IP.bvh
-    - Trot/Trot_L_RM.bvh
-    - Trot/Trot_R_RM.bvh
-    - Turn/Turn_L_RM.bvh
-    - Turn/Turn_R_RM.bvh
-    - Turn180/Turn180_L_RM.bvh
-    - Turn180/Turn180_R_RM.bvh
-    - Eating/Eating_RM.bvh
-    - Walk/Walk_B_RM.bvh
-    - Walk/Walk_BL_RM.bvh
-    - Walk/Walk_BR_RM.bvh
-    - Walk/Walk_F_RM.bvh
-    - Walk/Walk_L_RM.bvh
-    - Walk/Walk_R_RM.bvh
-    - Caress/Caress_idle_IP.bvh
-    - Defecate/Defecate_RM.bvh
+    # - Attack/Attack_L_IP.bvh
+    # - Attack/Attack_R_IP.bvh
+    # - Combat/Combat_start_IP.bvh
+    # - Combat/Combat_end_IP.bvh
+    # - EatDrink/EatDrink_start_RM.bvh
+    # - Drinking/Drinking_RM.bvh
+    # - EatDrink/EatDrink_end_RM.bvh
+    # - Crouch/Crouch_B_RM.bvh
+    # - Crouch/Crouch_BL_RM.bvh
+    # - Crouch/Crouch_BR_RM.bvh
+    # - CrouchTurn/CrouchTurn_L_RM.bvh
+    # - CrouchTurn/CrouchTurn_R_RM.bvh
+    # - Hit/Hit_B_RM.bvh
+    # - Hit/Hit_F_RM.bvh
+    # - Idle/Idle_2_RM.bvh
+    # - Idle/Idle_5_RM.bvh
+    # - Idle/Idle_6_RM.bvh
+    # - Idle/Idle_7_RM.bvh
+    # - Co/Co_attack_F_RM.bvh
+    # - Co/Co_attack_L_RM.bvh
+    # - Co/Co_attack_R_RM.bvh
+    # - Co/Co_Hit_M_RM.bvh
+    # - Co/Co_Hit_F_RM.bvh
+    # - Crouch/Crouch_F_RM.bvh
+    # - Crouch/Crouch_L_RM.bvh
+    # - Crouch/Crouch_R_RM.bvh
+    # - JumpRun/JumpRun_IP.bvh
+    # - Run/Run_F_IP.bvh
+    # - Run/Run_L_IP.bvh
+    # - Run/Run_R_IP.bvh
+    # - CrouchIdle/CrouchIdle_loop_2_RM.bvh
+    # - CrouchIdle/CrouchIdle_end_RM.bvh
+    # - SharpenClaws/SharpenClaws_Horiz_RM.bvh
+    # - Sit/Sit_end_RM.bvh
+    # - Trot/Trot_F_IP.bvh
+    # - Trot/Trot_L_RM.bvh
+    # - Trot/Trot_R_RM.bvh
+    # - Turn/Turn_L_RM.bvh
+    # - Turn/Turn_R_RM.bvh
+    # - Turn180/Turn180_L_RM.bvh
+    # - Turn180/Turn180_R_RM.bvh
+    # - Eating/Eating_RM.bvh
+    # - Walk/Walk_B_RM.bvh
+    # - Walk/Walk_BL_RM.bvh
+    # - Walk/Walk_BR_RM.bvh
+    # - Walk/Walk_F_RM.bvh
+    # - Walk/Walk_L_RM.bvh
+    # - Walk/Walk_R_RM.bvh
+    # - Caress/Caress_idle_IP.bvh
+    # - Defecate/Defecate_RM.bvh
 
 targets:
   dog_ids:
@@ -108,6 +106,8 @@ blend:
   lbs_global_yaw_deg: 0.0
   animation_mode: shapekeys
 
+retarget_mode: arp # 还可以填写direct/r2et
+
 # Inference still uses shepherd model coordinates.
 motion:
   inp_axis_transform: shepherd_y_z_x
@@ -136,7 +136,7 @@ model:
 #   stage2 -> load model.stage2_weights; force full gate, k=gate_scale
 #   blend  -> load model.stage2_weights; learned gate * gate_scale
 stage2:
-  mode: blend
+  mode: stage1
   gate_scale: 1.5
 
 # ARP path (retarget_mode=arp). Same knobs as batch_arp_sequence_smal33.
@@ -148,7 +148,7 @@ arp:
   use_source_fbx: true
   source_armature_hint: null
   target_armature_hint: null
-  remap_preset_name: remap_preset_rifigy_2_Crouch
+  remap_preset_name: remap_preset_cat_sucaibao
   # Optional explicit .bmap (overrides remap_preset_name lookup).
   # remap_preset_path: ./visualization/arp_presets/smal33_to_smal33.bmap
   operator_sequence:
